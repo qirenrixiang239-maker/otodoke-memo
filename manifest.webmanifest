@@ -1,0 +1,16 @@
+{
+  "name": "お届け先メモ",
+  "short_name": "お届け先メモ",
+  "description": "配達先の置き場所・注意点・不在回数を端末に記録するメモ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef1f4",
+  "theme_color": "#1d4fd8",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
