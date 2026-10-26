@@ -42,6 +42,8 @@
   color-scheme: dark;
 }
 /* ▼ ページ全体の基本設定 */
+/* hidden(隠す)と指定した部品は、どんな設定よりも優先して隠す */
+[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 body {
   background: var(--bg); color: var(--ink);

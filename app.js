@@ -280,7 +280,12 @@ $("#form").addEventListener("submit", async e => {
     tags: TAGS.filter(t => pickTags.has(t)),
   };
   $("#f-save").disabled = true;
-  try { await writeDoc(c); closeSheet(); toast(old ? "保存しました" : `${name}さんを追加しました`); }
+  try {
+    await writeDoc(c); closeSheet();
+    // 5秒以内なら「元に戻す」で取り消せる(編集→編集前に戻す/追加→追加を取り消す)
+    if (old) toast(`${name}さんの情報を変更しました`, () => writeDoc(old));
+    else toast(`${name}さんを追加しました`, () => removeDoc(c.id));
+  }
   catch (err) { $("#f-err").textContent = "保存できませんでした。通信状況を確認して、もう一度「保存する」を押してください。"; $("#f-err").hidden = false; }
   finally { $("#f-save").disabled = false; }
 });
