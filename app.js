@@ -14,6 +14,8 @@
 
 // メーター番号の最大文字数
 const METER_NO_MAX = 10;
+// 期限が「あと何か月」になったら黄色で知らせるか
+const EXPIRY_SOON_MONTHS = 6;
 const LS_KEY = "otodoke-memo-v1";
 
 // アプリが今覚えている情報
@@ -32,6 +34,12 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const fmtDate = s => { if (!s) return "—"; const [y, m, d] = s.split("-"); return `${+m}/${+d}`; };
+// 期限(「2031-03」の形)を「2031年3月」の表示にする
+const fmtYM = s => { const [y, m] = s.split("-"); return `${y}年${+m}月`; };
+// 「2031/3」「2031-3」「203103」なども「2031-03」の形にそろえる(合わない入力は null)
+const normYM = v => { v = v.trim(); if (!v) return ""; const m = v.match(/^(\d{4})\D?(\d{1,2})$/); return m && +m[2] >= 1 && +m[2] <= 12 ? `${m[1]}-${m[2].padStart(2, "0")}` : null; };
+// 期限まであと何か月か(今月なら 0、過ぎていたらマイナス)
+const monthsLeft = s => { const [y, m] = s.split("-").map(Number); const d = new Date(); return (y * 12 + m) - (d.getFullYear() * 12 + d.getMonth() + 1); };
 const daysAgo = s => { if (!s) return null; const ms = new Date(today()) - new Date(s); return Math.round(ms / 864e5); };
 
 /* ===== 2. 保存(この端末の中だけ) ===== */
@@ -63,8 +71,8 @@ function showNotice(msg) { $("#notice").innerHTML = msg ? `<div class="notice">$
 
 // 初めて起動したときだけ入れる見本データ(「(例)」付き。不要なら削除してOK)
 const EXAMPLES = [
-  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterNo: "A123456789", cylNo: "C-20481", capacity: "50kg", absent: 0, lastDelivered: "" },
-  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterNo: "0987654", cylNo: "C-11730", capacity: "20kg", absent: 0, lastDelivered: "" },
+  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterNo: "A123456789", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regExpiry: "2027-02", cylNo: "C-20481", capacity: "50kg", absent: 0, lastDelivered: "" },
+  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterNo: "0987654", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regExpiry: "2033-11", cylNo: "C-11730", capacity: "20kg", absent: 0, lastDelivered: "" },
 ];
 
 // アプリ起動時の処理:端末の中からデータを読み込む
@@ -120,7 +128,7 @@ function matches(c, q) {
   if (filter === "done" && c.lastDelivered !== today()) return false;
   if (!q) return true;
   // 名前・住所・メーター・ボンベのどの項目でも探せる
-  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.meterNo, c.cylNo, c.capacity].join(" ").toLowerCase();
+  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.meterNo, c.regMaker, c.regModel, c.cylNo, c.capacity].join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
@@ -147,6 +155,16 @@ function specRow(label, value, isNum) {
   return `<dt>${label}</dt><dd class="${value ? (isNum ? "num" : "") : "none"}">${value ? esc(value) : "未入力"}</dd>`;
 }
 
+// 期限の1項目。過ぎていたら赤、近づいていたら黄色の印を付ける
+function expiryRow(value) {
+  if (!value) return specRow("期限", "");
+  const left = monthsLeft(value);
+  const badge = left < 0 ? `<span class="exp over">期限切れ</span>`
+    : left === 0 ? `<span class="exp soon">今月まで</span>`
+    : left <= EXPIRY_SOON_MONTHS ? `<span class="exp soon">あと${left}か月</span>` : "";
+  return `<dt>期限</dt><dd class="num">${fmtYM(value)}${badge}</dd>`;
+}
+
 // 詳細画面の中身を組み立てる
 function detailHTML(c) {
   const done = c.lastDelivered === today();
@@ -163,7 +181,10 @@ function detailHTML(c) {
         ${c.address ? `<a class="d-map" href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図で開く</a>` : ""}
       </div>
       <section class="spec"><h3>メーター</h3><dl>
-        ${specRow("会社名", c.meterMaker)}${specRow("品番", c.meterModel, true)}${specRow("番号", c.meterNo, true)}
+        ${specRow("会社名", c.meterMaker)}${specRow("品番", c.meterModel, true)}${specRow("番号", c.meterNo, true)}${expiryRow(c.meterExpiry)}
+      </dl></section>
+      <section class="spec"><h3>調整器</h3><dl>
+        ${specRow("会社名", c.regMaker)}${specRow("品番", c.regModel, true)}${expiryRow(c.regExpiry)}
       </dl></section>
       <section class="spec"><h3>ボンベ</h3><dl>
         ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
@@ -214,7 +235,9 @@ function render() {
   const doneN = customers.filter(c => c.lastDelivered === t).length;
   $("#stats").innerHTML = mode === "loading" ? "読み込み中…" : `登録 <b>${customers.length}</b>件 · 今日完了 <b>${doneN}</b>件`;
   // 一度入力したメーターの会社名を、入力画面の候補にする
-  $("#makers").innerHTML = [...new Set(customers.map(c => c.meterMaker).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join("");
+  const opts = key => [...new Set(customers.map(c => c[key]).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join("");
+  $("#makers").innerHTML = opts("meterMaker");
+  $("#regmakers").innerHTML = opts("regMaker");
 
   renderDetail();
   if (mode === "loading") { $("#list").innerHTML = `<div class="empty"><strong>読み込み中…</strong></div>`; return; }
@@ -300,6 +323,10 @@ function openSheet(c) {
   $("#f-maker").value = c?.meterMaker || "";
   $("#f-model").value = c?.meterModel || "";
   $("#f-meterno").value = c?.meterNo || "";
+  $("#f-meterexp").value = c?.meterExpiry || "";
+  $("#f-regmaker").value = c?.regMaker || "";
+  $("#f-regmodel").value = c?.regModel || "";
+  $("#f-regexp").value = c?.regExpiry || "";
   $("#f-cyl").value = c?.cylNo || "";
   $("#f-cap").value = c?.capacity || "";
   updateMeterCount();
@@ -333,6 +360,8 @@ $("#form").addEventListener("submit", async e => {
   if (!name) { $("#f-err").textContent = "お客さんの名前を入力してください。名字だけでも大丈夫です。"; $("#f-err").hidden = false; return; }
   const meterNo = $("#f-meterno").value.trim();
   if ([...meterNo].length > METER_NO_MAX) { $("#f-err").textContent = `メーターの番号は${METER_NO_MAX}字以内で入力してください。`; $("#f-err").hidden = false; return; }
+  const meterExpiry = normYM($("#f-meterexp").value), regExpiry = normYM($("#f-regexp").value);
+  if (meterExpiry === null || regExpiry === null) { $("#f-err").textContent = "期限は「2031-03」のように、年と月で入力してください。"; $("#f-err").hidden = false; return; }
   const old = editingId ? customers.find(x => x.id === editingId) : null;
   const c = {
     ...(old || { absent: 0, lastDelivered: "" }),
@@ -342,6 +371,10 @@ $("#form").addEventListener("submit", async e => {
     meterMaker: $("#f-maker").value.trim(),
     meterModel: $("#f-model").value.trim(),
     meterNo: meterNo,
+    meterExpiry,
+    regMaker: $("#f-regmaker").value.trim(),
+    regModel: $("#f-regmodel").value.trim(),
+    regExpiry,
     cylNo: $("#f-cyl").value.trim(),
     capacity: $("#f-cap").value.trim(),
   };

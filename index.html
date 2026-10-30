@@ -75,6 +75,19 @@
       <div class="field"><label for="f-model">品番</label><input id="f-model" placeholder="例：NB4-X" autocomplete="off" autocapitalize="characters"></div>
       <div class="field"><label for="f-meterno">番号 <span class="count" id="f-meterno-count">0/10</span></label><input id="f-meterno" maxlength="10" placeholder="10字以内" autocomplete="off" autocapitalize="characters"></div>
     </div>
+    <div class="two">
+      <!-- 期限は「年と月」で入力する(スマホでは年月を選ぶ画面が出る) -->
+      <div class="field"><label for="f-meterexp">期限</label><input id="f-meterexp" type="month" placeholder="例：2031-03" autocomplete="off"></div>
+    </div>
+
+    <!-- 調整器の情報 -->
+    <div class="group-title">調整器</div>
+    <div class="field"><label for="f-regmaker">会社名</label><input id="f-regmaker" list="regmakers" placeholder="例：〇〇製作所" autocomplete="off"></div>
+    <datalist id="regmakers"></datalist>
+    <div class="two">
+      <div class="field"><label for="f-regmodel">品番</label><input id="f-regmodel" placeholder="例：R-10K" autocomplete="off" autocapitalize="characters"></div>
+      <div class="field"><label for="f-regexp">期限</label><input id="f-regexp" type="month" placeholder="例：2030-08" autocomplete="off"></div>
+    </div>
 
     <!-- ボンベの情報 -->
     <div class="group-title">ボンベ</div>

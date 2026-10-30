@@ -206,3 +206,8 @@ body.noscroll { overflow: hidden; }
 .d-actions .btn.ghost { background: var(--surface); border: 1.5px solid var(--line); color: var(--warn-ink); }
 /* メーターとボンベで、項目名の幅をそろえる */
 .spec dl { grid-template-columns: 4em 1fr; }
+
+/* ▼ 期限の印(期限切れ=赤、近い=黄色) */
+.exp { display: inline-block; margin-left: 8px; vertical-align: 2px; font-family: var(--font-body); font-size: 12px; font-weight: 700; letter-spacing: 0; border-radius: 999px; padding: 2px 8px; }
+.exp.over { background: var(--warn-soft); color: var(--warn-ink); }
+.exp.soon { background: var(--signal-soft); color: var(--signal-ink); }
