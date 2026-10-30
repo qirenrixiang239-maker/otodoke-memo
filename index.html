@@ -48,6 +48,10 @@
   <main id="list"></main>
 </div>
 
+<!-- ▼ お客さんの詳細画面(名前を押すと開く)。普段は hidden で隠れている -->
+<!-- 中身は app.js の detailHTML が作る -->
+<div class="detail" id="detail" hidden role="dialog" aria-modal="true" aria-label="お客さんの詳細"></div>
+
 <!-- ▼ 右下の「追加」ボタン -->
 <button class="fab" id="add" aria-label="お届け先を追加">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>追加

@@ -21,6 +21,7 @@ let customers = [];      // {id, ...data}
 let mode = "loading";    // "local"(読み込み完了)| "loading"
 let filter = "all";
 let editingId = null;
+let detailId = null;      // 詳細画面で開いているお客さんの id(閉じているときは null)
 let undoFn = null, toastTimer = null;
 
 // よく使う小さな道具
@@ -128,43 +129,80 @@ function renderFilters() {
   $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
 }
 
-// メーター・ボンベの1項目(未入力なら「—」)
-function specRow(label, value, isNum) {
-  return `<dt>${label}</dt><dd class="${value ? (isNum ? "num" : "") : "none"}">${value ? esc(value) : "—"}</dd>`;
+// 一覧の1行(名前と住所だけ)。押すと詳細画面が開く
+function row(c) {
+  const done = c.lastDelivered === today();
+  return `<button type="button" class="row${done ? " done" : ""}" data-id="${esc(c.id)}">
+    <span class="row-text">
+      <span class="name">${esc(c.name)}</span>
+      ${c.address ? `<span class="addr">${esc(c.address)}</span>` : ""}
+    </span>
+    ${done ? `<span class="status ok">今日完了</span>` : ""}
+    <span class="chev" aria-hidden="true">›</span>
+  </button>`;
 }
 
-// お客さん1人分のカードのHTMLを組み立てる
-function card(c) {
+// 詳細画面の1項目(未入力なら「未入力」)
+function specRow(label, value, isNum) {
+  return `<dt>${label}</dt><dd class="${value ? (isNum ? "num" : "") : "none"}">${value ? esc(value) : "未入力"}</dd>`;
+}
+
+// 詳細画面の中身を組み立てる
+function detailHTML(c) {
   const done = c.lastDelivered === today();
   const ago = daysAgo(c.lastDelivered);
   const mapQ = encodeURIComponent(c.address || "");
-  return `<article class="card${done ? " done" : ""}" data-id="${esc(c.id)}">
-    <div class="card-main">
-      <div class="row1">
-        <span class="name">${esc(c.name)}</span>
+  return `<header class="d-bar">
+      <button type="button" class="d-back" data-act="back">‹ 一覧</button>
+      <button type="button" class="d-edit" data-act="edit">編集</button>
+    </header>
+    <div class="d-body">
+      <div class="d-head">
+        <h2 class="d-name">${esc(c.name)}</h2>
+        ${c.address ? `<p class="d-addr">${esc(c.address)}</p>` : `<p class="d-addr none">住所 未入力</p>`}
+        ${c.address ? `<a class="d-map" href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図で開く</a>` : ""}
+      </div>
+      <section class="spec"><h3>メーター</h3><dl>
+        ${specRow("会社名", c.meterMaker)}${specRow("品番", c.meterModel, true)}${specRow("番号", c.meterNo, true)}
+      </dl></section>
+      <section class="spec"><h3>ボンベ</h3><dl>
+        ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
+      </dl></section>
+      <div class="meta">
+        <span>前回配達 <b>${fmtDate(c.lastDelivered)}</b>${ago != null && ago > 0 ? `(${ago}日前)` : ""}</span>
+        <span class="absent">不在 <b>${c.absent || 0}</b>回</span>
         ${done ? `<span class="status ok">今日完了</span>` : ""}
       </div>
-      ${c.address ? `<div class="addr">${esc(c.address)}</div>` : ""}
-      <div class="specs">
-        <section class="spec"><h4>メーター</h4><dl>
-          ${specRow("会社名", c.meterMaker)}${specRow("品番", c.meterModel, true)}${specRow("番号", c.meterNo, true)}
-        </dl></section>
-        <section class="spec"><h4>ボンベ</h4><dl>
-          ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
-        </dl></section>
+      <div class="d-actions">
+        <button type="button" class="btn primary" data-act="done">✓ 配達完了</button>
+        <button type="button" class="btn ghost" data-act="absent">不在</button>
       </div>
-      <div class="meta">
-        <span>前回配達 <b>${fmtDate(c.lastDelivered)}</b>${ago != null && ago > 0 ? `（${ago}日前）` : ""}</span>
-        <span class="absent">不在 <b>${c.absent || 0}</b>回</span>
-      </div>
-    </div>
-    <div class="actions">
-      <button class="act-done" data-act="done">✓ 完了</button>
-      <button class="act-absent" data-act="absent">不在</button>
-      ${c.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図</a>` : `<button disabled>地図</button>`}
-      <button data-act="edit">編集</button>
-    </div>
-  </article>`;
+    </div>`;
+}
+
+// 詳細画面を開く・閉じる
+function openDetail(id) {
+  detailId = id;
+  renderDetail();
+  $("#detail").hidden = false;
+  $("#detail").scrollTop = 0;
+  document.body.classList.add("noscroll");
+  // スマホの「戻る」操作で詳細画面が閉じるようにする
+  try { history.pushState({ detail: id }, ""); } catch (e) {}
+}
+function closeDetail(fromBack) {
+  if ($("#detail").hidden) return;
+  $("#detail").hidden = true;
+  detailId = null;
+  document.body.classList.remove("noscroll");
+  if (!fromBack) { try { history.back(); } catch (e) {} }
+}
+// データが変わったら詳細画面も描き直す(削除されていたら閉じる)
+function renderDetail() {
+  if (!detailId) return;
+  const c = customers.find(x => x.id === detailId);
+  if (!c) return closeDetail();
+  $("#detail").innerHTML = detailHTML(c);
 }
 
 // 一覧全体を描き直す(データが変わるたびに呼ばれる)
@@ -178,6 +216,7 @@ function render() {
   // 一度入力したメーターの会社名を、入力画面の候補にする
   $("#makers").innerHTML = [...new Set(customers.map(c => c.meterMaker).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join("");
 
+  renderDetail();
   if (mode === "loading") { $("#list").innerHTML = `<div class="empty"><strong>読み込み中…</strong></div>`; return; }
   if (!customers.length) {
     $("#list").innerHTML = `<div class="empty"><strong>まだお届け先がありません</strong><span>右下の「追加」から、お客さんの住所とメーター・ボンベの情報を登録しましょう。</span></div>`;
@@ -188,7 +227,7 @@ function render() {
 
   // 住所の順に並べる
   const byAddr = (a, b) => (a.address || "").localeCompare(b.address || "", "ja", { numeric: true }) || (a.name || "").localeCompare(b.name || "", "ja");
-  $("#list").innerHTML = `<section class="area"><h2>お客さん　${shown.length}件</h2><div class="list">${shown.sort(byAddr).map(card).join("")}</div></section>`;
+  $("#list").innerHTML = `<section class="area"><h2>お客さん　${shown.length}件</h2><div class="list">${shown.sort(byAddr).map(row).join("")}</div></section>`;
 }
 
 /* ===== 4. ボタンを押したときの動き ===== */
@@ -204,10 +243,16 @@ function toast(msg, undo) {
 $("#toast-undo").addEventListener("click", async () => { const f = undoFn; $("#toast").hidden = true; undoFn = null; if (f) await f(); });
 
 // カードの「完了」「不在」「編集」ボタン
-$("#list").addEventListener("click", async e => {
+// 一覧の名前を押したら、詳細画面を開く
+$("#list").addEventListener("click", e => {
+  const r = e.target.closest(".row[data-id]"); if (r) openDetail(r.dataset.id);
+});
+
+// 詳細画面のボタン(一覧に戻る・編集・配達完了・不在)
+$("#detail").addEventListener("click", async e => {
   const btn = e.target.closest("button[data-act]"); if (!btn) return;
-  const id = btn.closest(".card").dataset.id;
-  const c = customers.find(x => x.id === id); if (!c) return;
+  if (btn.dataset.act === "back") return closeDetail();
+  const c = customers.find(x => x.id === detailId); if (!c) return;
   const before = { ...c };
   if (btn.dataset.act === "edit") return openSheet(c);
   if (btn.dataset.act === "done") {
@@ -218,6 +263,16 @@ $("#list").addEventListener("click", async e => {
     await writeDoc({ ...c, absent: (c.absent || 0) + 1, lastAbsent: today() });
     toast(`${c.name}さん 不在を記録（${(c.absent || 0) + 1}回目）`, () => writeDoc(before));
   }
+});
+// スマホの「戻る」操作をしたとき
+window.addEventListener("popstate", () => {
+  // 入力画面やバックアップ画面が開いていたら、それだけを閉じる
+  if (!$("#sheet").hidden || !$("#backup").hidden) {
+    closeSheet(); closeBackup();
+    if (detailId) { try { history.pushState({ detail: detailId }, ""); } catch (e) {} }
+    return;
+  }
+  closeDetail(true);
 });
 
 // 絞り込みボタンと検索欄
@@ -264,7 +319,12 @@ $("#b-import").addEventListener("change", e => { const f = e.target.files[0]; if
 $("#add").addEventListener("click", () => openSheet(null));
 $("#f-cancel").addEventListener("click", closeSheet);
 $("#scrim").addEventListener("click", () => { closeSheet(); closeBackup(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!$("#sheet").hidden) closeSheet(); if (!$("#backup").hidden) closeBackup(); } });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!$("#sheet").hidden) return closeSheet();
+  if (!$("#backup").hidden) return closeBackup();
+  closeDetail();
+});
 
 // 「保存する」を押したとき
 $("#form").addEventListener("submit", async e => {

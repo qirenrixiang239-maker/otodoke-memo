@@ -159,16 +159,41 @@ h1 small { display: inline-block; font-family: var(--font-body); font-weight: 70
 .b-text.small { font-size: 12.5px; }
 .filebtn { text-align: center; display: block; cursor: pointer; }
 
-/* ▼ カードの中のメーター・ボンベ情報 */
-.specs { display: grid; grid-template-columns: 1fr; gap: 8px; }
-@media (min-width: 520px) { .specs { grid-template-columns: 1fr 1fr; } }
-.spec { background: var(--bg); border-radius: 8px; padding: 8px 10px; min-width: 0; }
-.spec h4 { margin: 0 0 4px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--accent); }
-.spec dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 14px; }
-.spec dt { color: var(--muted); font-size: 12.5px; padding-top: 1px; white-space: nowrap; }
-.spec dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
-.spec dd.num { font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
-.spec dd.none { color: var(--muted); font-weight: 400; }
+/* ▼ 顧客一覧の1行(名前と住所。押すと詳細が開く) */
+.row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 12px 14px; min-height: 60px; }
+.row:active { background: var(--bg); }
+.row.done { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.row-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.row .addr { font-size: 13px; }
+.chev { flex: none; font-size: 24px; line-height: 1; color: var(--muted); }
+.list { gap: 8px; }
+
+/* ▼ お客さんの詳細画面(画面全体をおおう) */
+.detail { position: fixed; inset: 0; z-index: 15; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+body.noscroll { overflow: hidden; }
+.d-bar { position: sticky; top: 0; z-index: 1; background: var(--bg); display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding-block: 8px; padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); }
+.d-back { border: 0; background: none; color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 8px; }
+.d-edit { border: 1.5px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 16px; font-weight: 700; font-size: 14px; }
+.d-body { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px;
+  padding-block: 16px 0; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.d-head { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.d-name { margin: 0; font-size: 26px; font-weight: 800; overflow-wrap: anywhere; }
+.d-addr { margin: 0; font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
+.d-addr.none { font-size: 13px; }
+.d-map { margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: none; border: 1.5px solid var(--line); border-radius: 999px; padding: 4px 12px; background: var(--surface); }
+.d-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 4px; }
+.d-actions .btn { min-height: 52px; }
+
+/* メーター・ボンベの情報(詳細画面) */
+.spec { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.spec h3 { margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .12em; color: var(--accent); }
+.spec dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; align-items: baseline; }
+.spec dt { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.spec dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 17px; font-weight: 500; }
+.spec dd.num { font-family: var(--font-mono); font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+.spec dd.none { color: var(--muted); font-weight: 400; font-size: 14px; }
 
 /* ▼ 入力画面の「メーター」「ボンベ」の見出し */
 .group-title { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .08em; border-bottom: 1.5px solid var(--line); padding-bottom: 4px; margin-top: 6px; }
@@ -177,3 +202,7 @@ h1 small { display: inline-block; font-family: var(--font-body); font-weight: 70
 
 /* ▼ お知らせの「元に戻す」を1行で表示する */
 .toast button { white-space: nowrap; flex: none; }
+/* 詳細画面の「不在」ボタンを、ボタンらしく見せる */
+.d-actions .btn.ghost { background: var(--surface); border: 1.5px solid var(--line); color: var(--warn-ink); }
+/* メーターとボンベで、項目名の幅をそろえる */
+.spec dl { grid-template-columns: 4em 1fr; }
