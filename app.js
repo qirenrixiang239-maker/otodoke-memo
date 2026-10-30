@@ -12,10 +12,8 @@
 
 /* ===== 1. 準備 ===== */
 
-// 選べる特徴タグの一覧
-const TAGS = ["置き配OK", "宅配ボックス", "不在が多い", "犬・ペット注意", "時間指定あり", "要サイン", "階段のみ", "インターホン故障"];
-// このうち、赤で目立たせる注意タグ
-const WARN = new Set(["不在が多い", "犬・ペット注意", "要サイン", "インターホン故障"]);
+// メーター番号の最大文字数
+const METER_NO_MAX = 10;
 const LS_KEY = "otodoke-memo-v1";
 
 // アプリが今覚えている情報
@@ -64,8 +62,8 @@ function showNotice(msg) { $("#notice").innerHTML = msg ? `<div class="notice">$
 
 // 初めて起動したときだけ入れる見本データ(「(例)」付き。不要なら削除してOK)
 const EXAMPLES = [
-  { id: "ex1", name: "（例）田中", area: "岩村田", room: "203", address: "岩村田1234 グリーンハイツ", place: "玄関横の青い宅配ボックス", tags: ["宅配ボックス", "不在が多い"], memo: "平日は18時以降なら在宅が多い。", phone: "", absent: 3, lastDelivered: "" },
-  { id: "ex2", name: "（例）佐藤", area: "岩村田", room: "", address: "岩村田2051 一軒家（赤い屋根）", place: "置き配OK：勝手口の屋根下", tags: ["置き配OK", "犬・ペット注意"], memo: "大型犬がいるが繋がれている。", phone: "", absent: 0, lastDelivered: "" },
+  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterNo: "A123456789", cylNo: "C-20481", capacity: "50kg", absent: 0, lastDelivered: "" },
+  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterNo: "0987654", cylNo: "C-11730", capacity: "20kg", absent: 0, lastDelivered: "" },
 ];
 
 // アプリ起動時の処理:端末の中からデータを読み込む
@@ -119,44 +117,51 @@ function closeBackup() { $("#backup").hidden = true; if ($("#sheet").hidden) $("
 function matches(c, q) {
   if (filter === "todo" && c.lastDelivered === today()) return false;
   if (filter === "done" && c.lastDelivered !== today()) return false;
-  if (TAGS.includes(filter) && !(c.tags || []).includes(filter)) return false;
   if (!q) return true;
-  const hay = [c.name, c.area, c.address, c.room, c.place, c.memo, (c.tags || []).join(" "), c.phone].join(" ").toLowerCase();
+  // 名前・住所・メーター・ボンベのどの項目でも探せる
+  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.meterNo, c.cylNo, c.capacity].join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
 function renderFilters() {
-  const opts = [["all", "すべて"], ["todo", "今日まだ"], ["done", "今日完了"], ...TAGS.map(t => [t, t])];
+  const opts = [["all", "すべて"], ["todo", "今日まだ"], ["done", "今日完了"]];
   $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
+}
+
+// メーター・ボンベの1項目(未入力なら「—」)
+function specRow(label, value, isNum) {
+  return `<dt>${label}</dt><dd class="${value ? (isNum ? "num" : "") : "none"}">${value ? esc(value) : "—"}</dd>`;
 }
 
 // お客さん1人分のカードのHTMLを組み立てる
 function card(c) {
   const done = c.lastDelivered === today();
-  const tags = (c.tags || []).map(t => `<span class="tag${WARN.has(t) ? " warn" : ""}">${esc(t)}</span>`).join("");
   const ago = daysAgo(c.lastDelivered);
-  const mapQ = encodeURIComponent([c.address, c.area].filter(Boolean).join(" "));
+  const mapQ = encodeURIComponent(c.address || "");
   return `<article class="card${done ? " done" : ""}" data-id="${esc(c.id)}">
     <div class="card-main">
       <div class="row1">
-        ${c.room ? `<span class="room">${esc(c.room)}</span>` : ""}
         <span class="name">${esc(c.name)}</span>
         ${done ? `<span class="status ok">今日完了</span>` : ""}
       </div>
       ${c.address ? `<div class="addr">${esc(c.address)}</div>` : ""}
-      ${c.place ? `<div class="place"><span class="k">置き場所</span><span>${esc(c.place)}</span></div>` : ""}
-      ${tags ? `<div class="tags">${tags}</div>` : ""}
-      ${c.memo ? `<div class="memo">${esc(c.memo)}</div>` : ""}
+      <div class="specs">
+        <section class="spec"><h4>メーター</h4><dl>
+          ${specRow("会社名", c.meterMaker)}${specRow("品番", c.meterModel, true)}${specRow("番号", c.meterNo, true)}
+        </dl></section>
+        <section class="spec"><h4>ボンベ</h4><dl>
+          ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
+        </dl></section>
+      </div>
       <div class="meta">
         <span>前回配達 <b>${fmtDate(c.lastDelivered)}</b>${ago != null && ago > 0 ? `（${ago}日前）` : ""}</span>
         <span class="absent">不在 <b>${c.absent || 0}</b>回</span>
-        ${c.phone ? `<span>☎ <span class="phone">${esc(c.phone)}</span></span>` : ""}
       </div>
     </div>
     <div class="actions">
       <button class="act-done" data-act="done">✓ 完了</button>
       <button class="act-absent" data-act="absent">不在</button>
-      ${mapQ ? `<a href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図</a>` : `<button disabled>地図</button>`}
+      ${c.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図</a>` : `<button disabled>地図</button>`}
       <button data-act="edit">編集</button>
     </div>
   </article>`;
@@ -170,22 +175,20 @@ function render() {
   const t = today();
   const doneN = customers.filter(c => c.lastDelivered === t).length;
   $("#stats").innerHTML = mode === "loading" ? "読み込み中…" : `登録 <b>${customers.length}</b>件 · 今日完了 <b>${doneN}</b>件`;
-  $("#areas").innerHTML = [...new Set(customers.map(c => c.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join("");
+  // 一度入力したメーターの会社名を、入力画面の候補にする
+  $("#makers").innerHTML = [...new Set(customers.map(c => c.meterMaker).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join("");
 
   if (mode === "loading") { $("#list").innerHTML = `<div class="empty"><strong>読み込み中…</strong></div>`; return; }
   if (!customers.length) {
-    $("#list").innerHTML = `<div class="empty"><strong>まだお届け先がありません</strong><span>右下の「追加」から、よく行くお宅の置き場所や注意点を登録しましょう。</span></div>`;
+    $("#list").innerHTML = `<div class="empty"><strong>まだお届け先がありません</strong><span>右下の「追加」から、お客さんの住所とメーター・ボンベの情報を登録しましょう。</span></div>`;
     return;
   }
   const shown = customers.filter(c => matches(c, q));
   if (!shown.length) { $("#list").innerHTML = `<div class="empty"><strong>見つかりませんでした</strong><span>検索語や絞り込みを変えてみてください。</span></div>`; return; }
 
-  const groups = {};
-  shown.forEach(c => { (groups[c.area || "エリア未設定"] ||= []).push(c); });
-  const sortRoom = (a, b) => (a.address || "").localeCompare(b.address || "", "ja") || (a.room || "").localeCompare(b.room || "", "ja", { numeric: true }) || (a.name || "").localeCompare(b.name || "", "ja");
-  $("#list").innerHTML = Object.keys(groups).sort((a, b) => a === "エリア未設定" ? 1 : b === "エリア未設定" ? -1 : a.localeCompare(b, "ja")).map(a =>
-    `<section class="area"><h2>${esc(a)}　${groups[a].length}件</h2><div class="list">${groups[a].sort(sortRoom).map(card).join("")}</div></section>`
-  ).join("");
+  // 住所の順に並べる
+  const byAddr = (a, b) => (a.address || "").localeCompare(b.address || "", "ja", { numeric: true }) || (a.name || "").localeCompare(b.name || "", "ja");
+  $("#list").innerHTML = `<section class="area"><h2>お客さん　${shown.length}件</h2><div class="list">${shown.sort(byAddr).map(card).join("")}</div></section>`;
 }
 
 /* ===== 4. ボタンを押したときの動き ===== */
@@ -223,26 +226,28 @@ $("#q").addEventListener("input", render);
 $("#qclear").addEventListener("click", () => { $("#q").value = ""; render(); $("#q").focus(); });
 
 /* ===== 5. 追加・編集画面 ===== */
-let pickTags = new Set();
 let delArmed = false;
-function renderTagPick() {
-  $("#f-tags").innerHTML = TAGS.map(t => `<button type="button" class="chip" data-t="${esc(t)}" aria-pressed="${pickTags.has(t)}">${esc(t)}</button>`).join("");
+
+// メーター番号の文字数を「3/10」のように表示する
+function updateMeterCount() {
+  const n = [...$("#f-meterno").value].length;
+  $("#f-meterno-count").textContent = `${n}/${METER_NO_MAX}`;
+  $("#f-meterno-count").classList.toggle("full", n >= METER_NO_MAX);
 }
-$("#f-tags").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; const t = b.dataset.t; pickTags.has(t) ? pickTags.delete(t) : pickTags.add(t); renderTagPick(); });
+$("#f-meterno").addEventListener("input", updateMeterCount);
 
 // 入力画面を開く(c があれば編集、なければ新規追加)
 function openSheet(c) {
   editingId = c ? c.id : null;
   $("#sheet-title").textContent = c ? "お届け先を編集" : "お届け先を追加";
   $("#f-name").value = c?.name || "";
-  $("#f-area").value = c?.area || (filter === "all" ? "" : "");
-  $("#f-room").value = c?.room || "";
   $("#f-addr").value = c?.address || "";
-  $("#f-place").value = c?.place || "";
-  $("#f-memo").value = c?.memo || "";
-  $("#f-phone").value = c?.phone || "";
-  pickTags = new Set(c?.tags || []);
-  renderTagPick();
+  $("#f-maker").value = c?.meterMaker || "";
+  $("#f-model").value = c?.meterModel || "";
+  $("#f-meterno").value = c?.meterNo || "";
+  $("#f-cyl").value = c?.cylNo || "";
+  $("#f-cap").value = c?.capacity || "";
+  updateMeterCount();
   $("#f-err").hidden = true;
   $("#f-delwrap").hidden = !c;
   delArmed = false; $("#f-del").textContent = "このお届け先を削除";
@@ -265,19 +270,20 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!$("#s
 $("#form").addEventListener("submit", async e => {
   e.preventDefault();
   const name = $("#f-name").value.trim();
-  if (!name) { $("#f-err").textContent = "名前を入力してください。表札の名字だけでも大丈夫です。"; $("#f-err").hidden = false; return; }
+  if (!name) { $("#f-err").textContent = "お客さんの名前を入力してください。名字だけでも大丈夫です。"; $("#f-err").hidden = false; return; }
+  const meterNo = $("#f-meterno").value.trim();
+  if ([...meterNo].length > METER_NO_MAX) { $("#f-err").textContent = `メーターの番号は${METER_NO_MAX}字以内で入力してください。`; $("#f-err").hidden = false; return; }
   const old = editingId ? customers.find(x => x.id === editingId) : null;
   const c = {
     ...(old || { absent: 0, lastDelivered: "" }),
     id: editingId || newId(),
     name,
-    area: $("#f-area").value.trim(),
-    room: $("#f-room").value.trim(),
     address: $("#f-addr").value.trim(),
-    place: $("#f-place").value.trim(),
-    memo: $("#f-memo").value.trim(),
-    phone: $("#f-phone").value.trim(),
-    tags: TAGS.filter(t => pickTags.has(t)),
+    meterMaker: $("#f-maker").value.trim(),
+    meterModel: $("#f-model").value.trim(),
+    meterNo: meterNo,
+    cylNo: $("#f-cyl").value.trim(),
+    capacity: $("#f-cap").value.trim(),
   };
   $("#f-save").disabled = true;
   try {
@@ -286,7 +292,7 @@ $("#form").addEventListener("submit", async e => {
     if (old) toast(`${name}さんの情報を変更しました`, () => writeDoc(old));
     else toast(`${name}さんを追加しました`, () => removeDoc(c.id));
   }
-  catch (err) { $("#f-err").textContent = "保存できませんでした。通信状況を確認して、もう一度「保存する」を押してください。"; $("#f-err").hidden = false; }
+  catch (err) { $("#f-err").textContent = "保存できませんでした。端末の空き容量を確認して、もう一度「保存する」を押してください。"; $("#f-err").hidden = false; }
   finally { $("#f-save").disabled = false; }
 });
 

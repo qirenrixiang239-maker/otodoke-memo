@@ -37,7 +37,7 @@
   <div class="searchbar">
     <div class="search">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-      <input id="q" type="search" placeholder="名前・住所・部屋番号で探す" autocomplete="off" aria-label="検索">
+      <input id="q" type="search" placeholder="名前・住所・番号で探す" autocomplete="off" aria-label="検索">
       <button class="clear" id="qclear" hidden>クリア</button>
     </div>
     <div class="chips" id="filters" role="group" aria-label="絞り込み"></div>
@@ -59,17 +59,28 @@
   <form class="sheet-in" id="form" novalidate>
     <div class="grab"></div>
     <h3 id="sheet-title">お届け先を追加</h3>
-    <div class="field"><label for="f-name">名前（表札）</label><input id="f-name" required placeholder="例：田中"></div>
+    <div class="field"><label for="f-name">お客さんの名前</label><input id="f-name" required placeholder="例：田中" autocomplete="off"></div>
+    <div class="field"><label for="f-addr">住所</label><input id="f-addr" placeholder="例：岩村田1234" autocomplete="off"></div>
+
+    <!-- メーターの情報 -->
+    <div class="group-title">メーター</div>
+    <div class="field"><label for="f-maker">会社名</label><input id="f-maker" list="makers" placeholder="例：〇〇計器" autocomplete="off"></div>
+    <!-- 一度入力した会社名は、次から候補に出る(中身は app.js が入れる) -->
+    <datalist id="makers"></datalist>
     <div class="two">
-      <div class="field"><label for="f-area">エリア</label><input id="f-area" list="areas" placeholder="例：岩村田"></div>
-      <div class="field"><label for="f-room">部屋番号</label><input id="f-room" placeholder="例：203"></div>
+      <div class="field"><label for="f-model">品番</label><input id="f-model" placeholder="例：NB4-X" autocomplete="off" autocapitalize="characters"></div>
+      <div class="field"><label for="f-meterno">番号 <span class="count" id="f-meterno-count">0/10</span></label><input id="f-meterno" maxlength="10" placeholder="10字以内" autocomplete="off" autocapitalize="characters"></div>
     </div>
-    <datalist id="areas"></datalist>
-    <div class="field"><label for="f-addr">住所・建物名</label><input id="f-addr" placeholder="例：岩村田1234 グリーンハイツ"></div>
-    <div class="field"><label for="f-place">置き場所</label><input id="f-place" placeholder="例：玄関横の青いボックス"></div>
-    <div class="field"><span class="lab">特徴</span><div class="tagpick" id="f-tags"></div></div>
-    <div class="field"><label for="f-memo">メモ</label><textarea id="f-memo" placeholder="例：夕方18時以降なら在宅が多い"></textarea></div>
-    <div class="field"><label for="f-phone">電話番号（任意）</label><input id="f-phone" type="tel" inputmode="tel" placeholder="090-0000-0000"></div>
+
+    <!-- ボンベの情報 -->
+    <div class="group-title">ボンベ</div>
+    <div class="two">
+      <div class="field"><label for="f-cyl">ボンベの番号</label><input id="f-cyl" placeholder="例：A-12345" autocomplete="off" autocapitalize="characters"></div>
+      <div class="field"><label for="f-cap">容量</label><input id="f-cap" list="caps" placeholder="例：50kg" autocomplete="off"></div>
+    </div>
+    <!-- 容量の候補 -->
+    <datalist id="caps"><option value="50kg"><option value="30kg"><option value="20kg"><option value="10kg"><option value="8kg"><option value="5kg"></datalist>
+
     <div class="err" id="f-err" hidden></div>
     <div class="sheet-actions">
       <button type="button" class="btn ghost" id="f-cancel">閉じる</button>
