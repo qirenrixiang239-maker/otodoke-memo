@@ -181,10 +181,10 @@ function detailHTML(c) {
         ${c.address ? `<a class="d-map" href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図で開く</a>` : ""}
       </div>
       <section class="spec"><h3>メーター</h3><dl>
-        ${specRow("会社名", c.meterMaker)}${specRow("品番", c.meterModel, true)}${specRow("番号", c.meterNo, true)}${expiryRow(c.meterExpiry)}
+        ${specRow("会社名", c.meterMaker)}${specRow("型式", c.meterModel, true)}${specRow("番号", c.meterNo, true)}${expiryRow(c.meterExpiry)}
       </dl></section>
       <section class="spec"><h3>調整器</h3><dl>
-        ${specRow("会社名", c.regMaker)}${specRow("品番", c.regModel, true)}${expiryRow(c.regExpiry)}
+        ${specRow("会社名", c.regMaker)}${specRow("型式", c.regModel, true)}${expiryRow(c.regExpiry)}
       </dl></section>
       <section class="spec"><h3>ボンベ</h3><dl>
         ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
