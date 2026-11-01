@@ -510,6 +510,11 @@ function openSheet(c) {
   $("#f-regtype").value = c?.regType || "";
   $("#f-regexp").value = c?.regExpiry || "";
   $("#f-cyl").value = c?.cylNo || "";
+  // 以前に選択肢以外の容量(30kg など)が入っていた人は、消えないようにその値も選べるようにしておく
+  $("#f-cap").querySelectorAll("option.old").forEach(o => o.remove());
+  if (c?.capacity && ![...$("#f-cap").options].some(o => o.value === c.capacity)) {
+    $("#f-cap").insertAdjacentHTML("beforeend", `<option class="old" value="${esc(c.capacity)}">${esc(c.capacity)}(以前の値)</option>`);
+  }
   $("#f-cap").value = c?.capacity || "";
   $("#f-err").hidden = true;
   $("#f-delwrap").hidden = !c;
@@ -570,7 +575,7 @@ $("#form").addEventListener("submit", async e => {
     regType: $("#f-regtype").value,
     regExpiry,
     cylNo: $("#f-cyl").value.trim(),
-    capacity: $("#f-cap").value.trim(),
+    capacity: $("#f-cap").value,
   };
   $("#f-save").disabled = true;
   try {

@@ -104,10 +104,11 @@
     <div class="group-title">ボンベ</div>
     <div class="two">
       <div class="field"><label for="f-cyl">ボンベの番号</label><input id="f-cyl" placeholder="例：A-12345" autocomplete="off" autocapitalize="characters"></div>
-      <div class="field"><label for="f-cap">容量</label><input id="f-cap" list="caps" placeholder="例：50kg" autocomplete="off"></div>
+      <!-- 容量は 10kg・20kg・50kg から選ぶ -->
+      <div class="field"><label for="f-cap">容量</label>
+        <select id="f-cap"><option value="">未選択</option><option value="10kg">10kg</option><option value="20kg">20kg</option><option value="50kg">50kg</option></select>
+      </div>
     </div>
-    <!-- 容量の候補 -->
-    <datalist id="caps"><option value="50kg"><option value="30kg"><option value="20kg"><option value="10kg"><option value="8kg"><option value="5kg"></datalist>
 
     <div class="err" id="f-err" hidden></div>
     <div class="sheet-actions">
