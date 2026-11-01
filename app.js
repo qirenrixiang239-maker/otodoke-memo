@@ -121,6 +121,196 @@ function renderBackupInfo() {
 function openBackup() { renderBackupInfo(); $("#b-err").hidden = true; $("#scrim").hidden = false; $("#backup").hidden = false; }
 function closeBackup() { $("#backup").hidden = true; if ($("#sheet").hidden) $("#scrim").hidden = true; }
 
+/* ===== 2-3. Excel 書き出し ===== */
+// Excel に載せられる項目の一覧(group が同じものは見出しをまとめる)
+const FIELDS = [
+  { key: "name", group: "", label: "名前", required: true },
+  { key: "address", group: "", label: "住所", max: 26 },
+  { key: "meterMaker", group: "メーター", label: "会社名", max: 16 },
+  { key: "meterModel", group: "メーター", label: "型式" },
+  { key: "meterNo", group: "メーター", label: "番号" },
+  { key: "meterExpiry", group: "メーター", label: "期限", type: "ym" },
+  { key: "regMaker", group: "調整器", label: "会社名", max: 16 },
+  { key: "regModel", group: "調整器", label: "型式" },
+  { key: "regExpiry", group: "調整器", label: "期限", type: "ym" },
+  { key: "cylNo", group: "ボンベ", label: "番号" },
+  { key: "capacity", group: "ボンベ", label: "容量" },
+  { key: "lastDelivered", group: "記録", label: "前回配達", type: "date" },
+  { key: "absent", group: "記録", label: "不在回数", type: "count" },
+];
+const XLS_KEY = LS_KEY + "-xlsFields";
+let xlsPick = new Set(FIELDS.filter(f => f.group !== "記録").map(f => f.key));
+try { const saved = JSON.parse(localStorage.getItem(XLS_KEY) || "null"); if (Array.isArray(saved)) xlsPick = new Set(saved); } catch (e) {}
+xlsPick.add("name");
+
+// 今の一覧(検索・絞り込み)に出ている人を、一覧と同じ順番で返す
+const byAddr = (a, b) => (a.address || "").localeCompare(b.address || "", "ja", { numeric: true }) || (a.name || "").localeCompare(b.name || "", "ja");
+function shownCustomers() { const q = $("#q").value.trim(); return customers.filter(c => matches(c, q)).sort(byAddr); }
+
+function renderXlsFields() {
+  const groups = [...new Set(FIELDS.map(f => f.group))];
+  $("#x-fields").innerHTML = groups.map(g => `<div class="x-group"><span class="g">${g || "基本"}</span>${
+    FIELDS.filter(f => f.group === g).map(f => `<button type="button" class="chip" data-k="${f.key}" aria-pressed="${xlsPick.has(f.key)}"${f.required ? " disabled" : ""}>${f.label}</button>`).join("")
+  }</div>`).join("");
+  const n = $("#x-shown").checked ? shownCustomers().length : customers.length;
+  $("#x-hint").textContent = `${n}人 × ${xlsPick.size}項目。項目が少ないときは用紙を何列かに分けて並べるので、1枚にたくさん入ります。`;
+  try { localStorage.setItem(XLS_KEY, JSON.stringify([...xlsPick])); } catch (e) {}
+}
+function openXls() {
+  $("#x-all-n").textContent = customers.length;
+  $("#x-shown-n").textContent = shownCustomers().length;
+  $("#x-err").hidden = true;
+  renderXlsFields();
+  $("#scrim").hidden = false; $("#xls").hidden = false;
+}
+function closeXls() { $("#xls").hidden = true; if ($("#sheet").hidden && $("#backup").hidden) $("#scrim").hidden = true; }
+
+// Excel を作る部品(vendor/exceljs.min.js)を、必要になったときだけ読み込む
+function loadExcelJS() {
+  if (window.ExcelJS) return Promise.resolve();
+  return new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = "vendor/exceljs.min.js"; sc.onload = ok; sc.onerror = ng; document.head.appendChild(sc); });
+}
+
+// セルに入れる値(番号は先頭の0が消えないよう、文字として入れる)
+function cellValue(c, f) {
+  const v = c[f.key];
+  if (f.type === "count") return v || 0;
+  if (!v) return "";
+  if (f.type === "ym") return v.replace("-", "/") + (monthsLeft(v) < 0 ? " ※切れ" : "");
+  if (f.type === "date") return v.replace(/-/g, "/");
+  return String(v);
+}
+// 文字の見た目の幅(全角は2、半角は1)
+const textWidth = s => [...String(s)].reduce((n, ch) => n + (ch.charCodeAt(0) > 0xff ? 2 : 1), 0);
+
+async function buildWorkbook(list, fields) {
+  await loadExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "お届け先メモ";
+  const thin = { style: "thin", color: { argb: "FF8C96A0" } };
+  const border = { top: thin, bottom: thin, left: thin, right: thin };
+  const headFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9DEE5" } };
+  const zebraFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F5F8" } };
+  const overFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFD6D1" } };
+  const soonFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF0C2" } };
+
+  // 列の幅(中身に合わせる。長すぎるものは上限で止めて、文字を縮めて収める)
+  const widths = fields.map(f => {
+    const w = Math.max(textWidth(f.label), ...list.map(c => textWidth(cellValue(c, f))), 4) + 2;
+    return Math.min(w, f.max || 22);
+  });
+  const ROW_PT = 16, HEAD_PT = 32;                     // 1行の高さ / 見出し2行分の高さ(ポイント)
+  const colPt = w => (w * 7 + 5) * 0.75;               // 列の幅 → ポイント(おおよそ)
+  const GAP = 2;                                       // 列のかたまりの間のすき間(列幅)
+  const blockPt = widths.reduce((a, w) => a + colPt(w), 0);
+
+  // 縦向き・横向き × 何列に分けるか、のうち、1ページに一番たくさん入る組み合わせを選ぶ
+  const pages = [{ orient: "portrait", w: 595 - 58, h: 842 - 80 }, { orient: "landscape", w: 842 - 58, h: 595 - 80 }];
+  let best = null;
+  for (const pg of pages) for (let k = 1; k <= 4; k++) {
+    const total = k * blockPt + (k - 1) * colPt(GAP);
+    const scale = Math.min(1, pg.w / total);
+    if (k > 1 && scale < 0.75) continue;                // 文字が小さくなりすぎる分け方は使わない
+    const rows = Math.max(1, Math.floor(((pg.h / scale) - HEAD_PT) / ROW_PT * 0.96));
+    const per = k * rows;
+    if (!best || per > best.per || (per === best.per && scale > best.scale)) best = { ...pg, k, scale, rows, per };
+  }
+
+  /* --- 1枚目:印刷用 --- */
+  const ws = wb.addWorksheet("印刷用");
+  const groupsOf = fields.map(f => f.group);
+  for (let b = 0; b < best.k; b++) {
+    const c0 = b * (fields.length + 1) + 1;            // このかたまりの最初の列
+    fields.forEach((f, i) => {
+      ws.getColumn(c0 + i).width = widths[i];
+      const top = ws.getCell(1, c0 + i), bot = ws.getCell(2, c0 + i);
+      if (!f.group) { top.value = f.label; ws.mergeCells(1, c0 + i, 2, c0 + i); }
+      else { top.value = f.group; bot.value = f.label; }
+    });
+    // 同じグループの見出し(メーター など)を横につなげる
+    let i = 0;
+    while (i < fields.length) {
+      let j = i; while (j + 1 < fields.length && groupsOf[j + 1] === groupsOf[i]) j++;
+      if (groupsOf[i] && j > i) ws.mergeCells(1, c0 + i, 1, c0 + j);
+      i = j + 1;
+    }
+    for (let r = 1; r <= 2; r++) for (let x = 0; x < fields.length; x++) {
+      const cell = ws.getCell(r, c0 + x);
+      cell.font = { bold: true, size: 10 }; cell.fill = headFill; cell.border = border;
+      cell.alignment = { horizontal: "center", vertical: "middle", shrinkToFit: true };
+    }
+    if (b < best.k - 1) ws.getColumn(c0 + fields.length).width = GAP;
+  }
+  ws.getRow(1).height = HEAD_PT / 2; ws.getRow(2).height = HEAD_PT / 2;
+
+  // お客さんを、ページごとに「1列目を上から下へ → 2列目へ」の順で並べる
+  let row = 3;
+  for (let start = 0; start < list.length; start += best.per) {
+    const chunk = list.slice(start, start + best.per);
+    const rowsHere = Math.min(best.rows, Math.ceil(chunk.length / best.k));
+    for (let r = 0; r < rowsHere; r++) {
+      ws.getRow(row + r).height = ROW_PT;
+      for (let b = 0; b < best.k; b++) {
+        const c = chunk[b * rowsHere + r]; if (!c) continue;
+        const c0 = b * (fields.length + 1) + 1;
+        fields.forEach((f, i) => {
+          const cell = ws.getCell(row + r, c0 + i);
+          cell.value = cellValue(c, f);
+          cell.font = { size: 10, bold: f.key === "name" };
+          cell.border = border;
+          cell.alignment = { vertical: "middle", shrinkToFit: true, horizontal: f.type === "count" ? "right" : "left" };
+          if (r % 2 === 1) cell.fill = zebraFill;
+          if (f.type === "ym" && c[f.key]) { const left = monthsLeft(c[f.key]); if (left < 0) { cell.fill = overFill; cell.font = { size: 10, bold: true }; } else if (left <= EXPIRY_SOON_MONTHS) cell.fill = soonFill; }
+        });
+      }
+    }
+    row += rowsHere;
+    if (start + best.per < list.length) ws.getRow(row - 1).addPageBreak();
+  }
+  ws.pageSetup = {
+    paperSize: 9, orientation: best.orient, scale: Math.max(10, Math.floor(best.scale * 100)),
+    horizontalCentered: true, printTitlesRow: "1:2",
+    margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.5, header: 0.25, footer: 0.25 },
+  };
+  ws.headerFooter = { oddHeader: `&L&10お客さん一覧&R&10${today().replace(/-/g, "/")}　${list.length}人`, oddFooter: "&C&10&P / &N ページ" };
+
+  /* --- 2枚目:データ(1行1人。Excel で並べ替えや絞り込みに使う) --- */
+  const ds = wb.addWorksheet("データ", { views: [{ state: "frozen", ySplit: 1 }] });
+  ds.addRow(fields.map(f => (f.group ? f.group + " " : "") + f.label));
+  list.forEach(c => ds.addRow(fields.map(f => cellValue(c, f))));
+  ds.getRow(1).font = { bold: true };
+  fields.forEach((f, i) => { ds.getColumn(i + 1).width = Math.max(widths[i], textWidth(ds.getCell(1, i + 1).value) + 2); });
+  ds.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: fields.length } };
+  // データのシートを印刷したときも、用紙の幅に収める
+  ds.pageSetup = { paperSize: 9, orientation: fields.length > 7 ? "landscape" : "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:1",
+    margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.25, footer: 0.25 } };
+  ds.headerFooter = { oddFooter: "&C&10&P / &N ページ" };
+  wb.views = [{ activeTab: 0 }];             // 開いたときは「印刷用」のシートを表示
+
+  return { buffer: await wb.xlsx.writeBuffer(), layout: best };
+}
+
+async function makeXlsx() {
+  const list = $("#x-shown").checked ? shownCustomers() : customers.slice().sort(byAddr);
+  const fields = FIELDS.filter(f => xlsPick.has(f.key));
+  if (!list.length) { $("#x-err").textContent = "載せるお客さんがいません。「全員」を選ぶか、検索を変えてください。"; $("#x-err").hidden = false; return; }
+  $("#x-make").disabled = true; $("#x-make").textContent = "作っています…";
+  try {
+    const { buffer, layout } = await buildWorkbook(list, fields);
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `otodoke-list_${today()}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    closeXls();
+    toast(`${list.length}人分を書き出しました(1ページ最大${layout.per}人)`);
+  } catch (e) {
+    $("#x-err").textContent = "Excel ファイルを作れませんでした。一度アプリを開き直してから、もう一度お試しください。";
+    $("#x-err").hidden = false;
+  } finally { $("#x-make").disabled = false; $("#x-make").textContent = "Excel ファイルを作る"; }
+}
+
 /* ===== 3. 画面を作る ===== */
 // このお客さんが、検索語と絞り込みに当てはまるか調べる
 function matches(c, q) {
@@ -249,7 +439,6 @@ function render() {
   if (!shown.length) { $("#list").innerHTML = `<div class="empty"><strong>見つかりませんでした</strong><span>検索語や絞り込みを変えてみてください。</span></div>`; return; }
 
   // 住所の順に並べる
-  const byAddr = (a, b) => (a.address || "").localeCompare(b.address || "", "ja", { numeric: true }) || (a.name || "").localeCompare(b.name || "", "ja");
   $("#list").innerHTML = `<section class="area"><h2>お客さん　${shown.length}件</h2><div class="list">${shown.sort(byAddr).map(row).join("")}</div></section>`;
 }
 
@@ -290,8 +479,8 @@ $("#detail").addEventListener("click", async e => {
 // スマホの「戻る」操作をしたとき
 window.addEventListener("popstate", () => {
   // 入力画面やバックアップ画面が開いていたら、それだけを閉じる
-  if (!$("#sheet").hidden || !$("#backup").hidden) {
-    closeSheet(); closeBackup();
+  if (!$("#sheet").hidden || !$("#backup").hidden || !$("#xls").hidden) {
+    closeSheet(); closeBackup(); closeXls();
     if (detailId) { try { history.pushState({ detail: detailId }, ""); } catch (e) {} }
     return;
   }
@@ -338,6 +527,19 @@ function openSheet(c) {
 }
 function closeSheet() { $("#scrim").hidden = true; $("#sheet").hidden = true; editingId = null; }
 
+// Excel 書き出し画面のボタン
+$("#xls-open").addEventListener("click", openXls);
+$("#x-close").addEventListener("click", closeXls);
+$("#x-make").addEventListener("click", makeXlsx);
+$("#x-all").addEventListener("change", renderXlsFields);
+$("#x-shown").addEventListener("change", renderXlsFields);
+$("#x-fields").addEventListener("click", e => {
+  const b = e.target.closest(".chip[data-k]"); if (!b || b.disabled) return;
+  const k = b.dataset.k; xlsPick.has(k) ? xlsPick.delete(k) : xlsPick.add(k); renderXlsFields();
+});
+$("#x-all-fields").addEventListener("click", () => { xlsPick = new Set(FIELDS.map(f => f.key)); renderXlsFields(); });
+$("#x-min-fields").addEventListener("click", () => { xlsPick = new Set(["name"]); renderXlsFields(); });
+
 // バックアップ画面のボタン
 $("#menu").addEventListener("click", openBackup);
 $("#b-close").addEventListener("click", closeBackup);
@@ -345,11 +547,12 @@ $("#b-export").addEventListener("click", exportBackup);
 $("#b-import").addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ""; });
 $("#add").addEventListener("click", () => openSheet(null));
 $("#f-cancel").addEventListener("click", closeSheet);
-$("#scrim").addEventListener("click", () => { closeSheet(); closeBackup(); });
+$("#scrim").addEventListener("click", () => { closeSheet(); closeBackup(); closeXls(); });
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!$("#sheet").hidden) return closeSheet();
   if (!$("#backup").hidden) return closeBackup();
+  if (!$("#xls").hidden) return closeXls();
   closeDetail();
 });
 

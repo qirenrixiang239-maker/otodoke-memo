@@ -30,6 +30,8 @@
       <div class="stats" id="stats">読み込み中…</div>
       <!-- バックアップ画面を開くボタン -->
       <button class="menu" id="menu" aria-label="バックアップ">バックアップ</button>
+      <!-- Excel 書き出し画面を開くボタン -->
+      <button class="menu" id="xls-open">Excel</button>
     </div>
   </header>
 
@@ -122,6 +124,36 @@
     <p class="b-text small">読み込むと、この端末のデータはファイルの内容に置き換わります。</p>
     <div class="err" id="b-err" hidden></div>
     <button type="button" class="btn ghost" id="b-close">閉じる</button>
+  </div>
+</div>
+
+<!-- ▼ Excel 書き出し画面。普段は hidden で隠れている -->
+<div class="sheet" id="xls" hidden role="dialog" aria-modal="true" aria-labelledby="xls-title">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h3 id="xls-title">Excel で書き出す</h3>
+    <div class="field">
+      <span class="lab">載せるお客さん</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="x-target" id="x-all" value="all" checked> 全員（<span id="x-all-n">0</span>人）</label>
+        <label class="opt"><input type="radio" name="x-target" id="x-shown" value="shown"> 今の一覧に出ている人（<span id="x-shown-n">0</span>人）</label>
+      </div>
+    </div>
+    <div class="field">
+      <span class="lab">載せる項目</span>
+      <!-- 項目のボタンは app.js が作る -->
+      <div id="x-fields" class="x-fields"></div>
+      <div class="x-quick">
+        <button type="button" class="chip" id="x-all-fields">すべて選ぶ</button>
+        <button type="button" class="chip" id="x-min-fields">名前だけにする</button>
+      </div>
+    </div>
+    <p class="b-text" id="x-hint"></p>
+    <div class="err" id="x-err" hidden></div>
+    <div class="sheet-actions">
+      <button type="button" class="btn ghost" id="x-close">閉じる</button>
+      <button type="button" class="btn primary" id="x-make">Excel ファイルを作る</button>
+    </div>
   </div>
 </div>
 

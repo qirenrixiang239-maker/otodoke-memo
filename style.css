@@ -211,3 +211,13 @@ body.noscroll { overflow: hidden; }
 .exp { display: inline-block; margin-left: 8px; vertical-align: 2px; font-family: var(--font-body); font-size: 12px; font-weight: 700; letter-spacing: 0; border-radius: 999px; padding: 2px 8px; }
 .exp.over { background: var(--warn-soft); color: var(--warn-ink); }
 .exp.soon { background: var(--signal-soft); color: var(--signal-ink); }
+
+/* ▼ Excel 書き出し画面 */
+.opts { display: flex; flex-direction: column; gap: 6px; }
+.opt { display: flex; align-items: center; gap: 8px; font-size: 15px; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+.opt input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.x-fields { display: flex; flex-direction: column; gap: 8px; }
+.x-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.x-group .g { font-size: 12px; font-weight: 700; color: var(--accent); width: 4.2em; flex: none; }
+.x-quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.chip:disabled { opacity: .55; }

@@ -14,6 +14,7 @@ const WAIT_MS = 3000;
 const FILES = [
   "./", "./index.html", "./style.css", "./app.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png",
+  "./vendor/exceljs.min.js",   // Excel ファイルを作る部品(オフラインでも使えるよう端末に保存)
 ];
 
 // 初めて開いたとき:アプリ本体を端末に保存する
