@@ -12,8 +12,6 @@
 
 /* ===== 1. 準備 ===== */
 
-// メーター番号の最大文字数
-const METER_NO_MAX = 10;
 // 期限が「あと何か月」になったら黄色で知らせるか
 const EXPIRY_SOON_MONTHS = 6;
 const LS_KEY = "otodoke-memo-v1";
@@ -71,8 +69,8 @@ function showNotice(msg) { $("#notice").innerHTML = msg ? `<div class="notice">$
 
 // 初めて起動したときだけ入れる見本データ(「(例)」付き。不要なら削除してOK)
 const EXAMPLES = [
-  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterNo: "A123456789", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regExpiry: "2027-02", cylNo: "C-20481", capacity: "50kg", absent: 0, lastDelivered: "" },
-  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterNo: "0987654", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regExpiry: "2033-11", cylNo: "C-11730", capacity: "20kg", absent: 0, lastDelivered: "" },
+  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterPitch: "130", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regType: "N型", regExpiry: "2027-02", cylNo: "C-20481", capacity: "50kg", absent: 0, lastDelivered: "" },
+  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterPitch: "90", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regType: "F型", regExpiry: "2033-11", cylNo: "C-11730", capacity: "20kg", absent: 0, lastDelivered: "" },
 ];
 
 // アプリ起動時の処理:端末の中からデータを読み込む
@@ -128,17 +126,18 @@ const FIELDS = [
   { key: "address", group: "", label: "住所", max: 26 },
   { key: "meterMaker", group: "メーター", label: "会社名", max: 16 },
   { key: "meterModel", group: "メーター", label: "型式" },
-  { key: "meterNo", group: "メーター", label: "番号" },
+  { key: "meterPitch", group: "メーター", label: "ピッチ" },
   { key: "meterExpiry", group: "メーター", label: "期限", type: "ym" },
   { key: "regMaker", group: "調整器", label: "会社名", max: 16 },
   { key: "regModel", group: "調整器", label: "型式" },
+  { key: "regType", group: "調整器", label: "型" },
   { key: "regExpiry", group: "調整器", label: "期限", type: "ym" },
   { key: "cylNo", group: "ボンベ", label: "番号" },
   { key: "capacity", group: "ボンベ", label: "容量" },
   { key: "lastDelivered", group: "記録", label: "前回配達", type: "date" },
   { key: "absent", group: "記録", label: "不在回数", type: "count" },
 ];
-const XLS_KEY = LS_KEY + "-xlsFields";
+const XLS_KEY = LS_KEY + "-xlsFields2";   // 項目を変えたので、選択の記憶を新しくする
 let xlsPick = new Set(FIELDS.filter(f => f.group !== "記録").map(f => f.key));
 try { const saved = JSON.parse(localStorage.getItem(XLS_KEY) || "null"); if (Array.isArray(saved)) xlsPick = new Set(saved); } catch (e) {}
 xlsPick.add("name");
@@ -318,7 +317,7 @@ function matches(c, q) {
   if (filter === "done" && c.lastDelivered !== today()) return false;
   if (!q) return true;
   // 名前・住所・メーター・ボンベのどの項目でも探せる
-  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.meterNo, c.regMaker, c.regModel, c.cylNo, c.capacity].join(" ").toLowerCase();
+  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.cylNo, c.capacity].join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
@@ -371,10 +370,10 @@ function detailHTML(c) {
         ${c.address ? `<a class="d-map" href="https://www.google.com/maps/search/?api=1&query=${mapQ}" target="_blank" rel="noopener">地図で開く</a>` : ""}
       </div>
       <section class="spec"><h3>メーター</h3><dl>
-        ${specRow("会社名", c.meterMaker)}${specRow("型式", c.meterModel, true)}${specRow("番号", c.meterNo, true)}${expiryRow(c.meterExpiry)}
+        ${specRow("会社名", c.meterMaker)}${specRow("型式", c.meterModel, true)}${specRow("ピッチ", c.meterPitch, true)}${expiryRow(c.meterExpiry)}
       </dl></section>
       <section class="spec"><h3>調整器</h3><dl>
-        ${specRow("会社名", c.regMaker)}${specRow("型式", c.regModel, true)}${expiryRow(c.regExpiry)}
+        ${specRow("会社名", c.regMaker)}${specRow("型式", c.regModel, true)}${specRow("型", c.regType)}${expiryRow(c.regExpiry)}
       </dl></section>
       <section class="spec"><h3>ボンベ</h3><dl>
         ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
@@ -495,13 +494,17 @@ $("#qclear").addEventListener("click", () => { $("#q").value = ""; render(); $("
 /* ===== 5. 追加・編集画面 ===== */
 let delArmed = false;
 
-// メーター番号の文字数を「3/10」のように表示する
-function updateMeterCount() {
-  const n = [...$("#f-meterno").value].length;
-  $("#f-meterno-count").textContent = `${n}/${METER_NO_MAX}`;
-  $("#f-meterno-count").classList.toggle("full", n >= METER_NO_MAX);
+// 2つから選ぶボタン(ピッチ・調整器の型)。選んだ値は data-value に覚えておく
+function setSeg(id, v) {
+  const box = $("#" + id);
+  box.dataset.value = v || "";
+  box.querySelectorAll("button").forEach(b => b.setAttribute("aria-checked", String(b.dataset.v === box.dataset.value)));
 }
-$("#f-meterno").addEventListener("input", updateMeterCount);
+const getSeg = id => $("#" + id).dataset.value || "";
+["f-pitch", "f-regtype"].forEach(id => $("#" + id).addEventListener("click", e => {
+  const b = e.target.closest("button[data-v]"); if (!b) return;
+  setSeg(id, getSeg(id) === b.dataset.v ? "" : b.dataset.v);   // 同じボタンをもう一度押すと選択を外す
+}));
 
 // 入力画面を開く(c があれば編集、なければ新規追加)
 function openSheet(c) {
@@ -511,14 +514,14 @@ function openSheet(c) {
   $("#f-addr").value = c?.address || "";
   $("#f-maker").value = c?.meterMaker || "";
   $("#f-model").value = c?.meterModel || "";
-  $("#f-meterno").value = c?.meterNo || "";
+  setSeg("f-pitch", c?.meterPitch);
   $("#f-meterexp").value = c?.meterExpiry || "";
   $("#f-regmaker").value = c?.regMaker || "";
   $("#f-regmodel").value = c?.regModel || "";
+  setSeg("f-regtype", c?.regType);
   $("#f-regexp").value = c?.regExpiry || "";
   $("#f-cyl").value = c?.cylNo || "";
   $("#f-cap").value = c?.capacity || "";
-  updateMeterCount();
   $("#f-err").hidden = true;
   $("#f-delwrap").hidden = !c;
   delArmed = false; $("#f-del").textContent = "このお届け先を削除";
@@ -561,8 +564,6 @@ $("#form").addEventListener("submit", async e => {
   e.preventDefault();
   const name = $("#f-name").value.trim();
   if (!name) { $("#f-err").textContent = "お客さんの名前を入力してください。名字だけでも大丈夫です。"; $("#f-err").hidden = false; return; }
-  const meterNo = $("#f-meterno").value.trim();
-  if ([...meterNo].length > METER_NO_MAX) { $("#f-err").textContent = `メーターの番号は${METER_NO_MAX}字以内で入力してください。`; $("#f-err").hidden = false; return; }
   const meterExpiry = normYM($("#f-meterexp").value), regExpiry = normYM($("#f-regexp").value);
   if (meterExpiry === null || regExpiry === null) { $("#f-err").textContent = "期限は「2031-03」のように、年と月で入力してください。"; $("#f-err").hidden = false; return; }
   const old = editingId ? customers.find(x => x.id === editingId) : null;
@@ -573,10 +574,11 @@ $("#form").addEventListener("submit", async e => {
     address: $("#f-addr").value.trim(),
     meterMaker: $("#f-maker").value.trim(),
     meterModel: $("#f-model").value.trim(),
-    meterNo: meterNo,
+    meterPitch: getSeg("f-pitch"),
     meterExpiry,
     regMaker: $("#f-regmaker").value.trim(),
     regModel: $("#f-regmodel").value.trim(),
+    regType: getSeg("f-regtype"),
     regExpiry,
     cylNo: $("#f-cyl").value.trim(),
     capacity: $("#f-cap").value.trim(),
