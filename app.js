@@ -494,17 +494,6 @@ $("#qclear").addEventListener("click", () => { $("#q").value = ""; render(); $("
 /* ===== 5. 追加・編集画面 ===== */
 let delArmed = false;
 
-// 2つから選ぶボタン(ピッチ・調整器の型)。選んだ値は data-value に覚えておく
-function setSeg(id, v) {
-  const box = $("#" + id);
-  box.dataset.value = v || "";
-  box.querySelectorAll("button").forEach(b => b.setAttribute("aria-checked", String(b.dataset.v === box.dataset.value)));
-}
-const getSeg = id => $("#" + id).dataset.value || "";
-["f-pitch", "f-regtype"].forEach(id => $("#" + id).addEventListener("click", e => {
-  const b = e.target.closest("button[data-v]"); if (!b) return;
-  setSeg(id, getSeg(id) === b.dataset.v ? "" : b.dataset.v);   // 同じボタンをもう一度押すと選択を外す
-}));
 
 // 入力画面を開く(c があれば編集、なければ新規追加)
 function openSheet(c) {
@@ -514,11 +503,11 @@ function openSheet(c) {
   $("#f-addr").value = c?.address || "";
   $("#f-maker").value = c?.meterMaker || "";
   $("#f-model").value = c?.meterModel || "";
-  setSeg("f-pitch", c?.meterPitch);
+  $("#f-pitch").value = c?.meterPitch || "";
   $("#f-meterexp").value = c?.meterExpiry || "";
   $("#f-regmaker").value = c?.regMaker || "";
   $("#f-regmodel").value = c?.regModel || "";
-  setSeg("f-regtype", c?.regType);
+  $("#f-regtype").value = c?.regType || "";
   $("#f-regexp").value = c?.regExpiry || "";
   $("#f-cyl").value = c?.cylNo || "";
   $("#f-cap").value = c?.capacity || "";
@@ -574,11 +563,11 @@ $("#form").addEventListener("submit", async e => {
     address: $("#f-addr").value.trim(),
     meterMaker: $("#f-maker").value.trim(),
     meterModel: $("#f-model").value.trim(),
-    meterPitch: getSeg("f-pitch"),
+    meterPitch: $("#f-pitch").value,
     meterExpiry,
     regMaker: $("#f-regmaker").value.trim(),
     regModel: $("#f-regmodel").value.trim(),
-    regType: getSeg("f-regtype"),
+    regType: $("#f-regtype").value,
     regExpiry,
     cylNo: $("#f-cyl").value.trim(),
     capacity: $("#f-cap").value.trim(),
