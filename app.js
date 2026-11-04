@@ -69,8 +69,8 @@ function showNotice(msg) { $("#notice").innerHTML = msg ? `<div class="notice">$
 
 // 初めて起動したときだけ入れる見本データ(「(例)」付き。不要なら削除してOK)
 const EXAMPLES = [
-  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterPitch: "130", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regType: "N型", regExpiry: "2027-02", cylNo: "C-20481", capacity: "50kg", absent: 0, lastDelivered: "" },
-  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterPitch: "90", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regType: "F型", regExpiry: "2033-11", cylNo: "C-11730", capacity: "20kg", absent: 0, lastDelivered: "" },
+  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterPitch: "130", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regType: "N型", regExpiry: "2027-02", cylNo: "C-20481", capacity: "50kg", cylCount: "2本", absent: 0, lastDelivered: "" },
+  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterPitch: "90", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regType: "F型", regExpiry: "2033-11", cylNo: "C-11730", capacity: "20kg", cylCount: "1本", absent: 0, lastDelivered: "" },
 ];
 
 // アプリ起動時の処理:端末の中からデータを読み込む
@@ -217,12 +217,20 @@ const FIELDS = [
   { key: "regExpiry", group: "調整器", label: "期限", type: "ym" },
   { key: "cylNo", group: "ボンベ", label: "番号" },
   { key: "capacity", group: "ボンベ", label: "容量" },
+  { key: "cylCount", group: "ボンベ", label: "本数" },
   { key: "lastDelivered", group: "記録", label: "前回配達", type: "date" },
   { key: "absent", group: "記録", label: "不在回数", type: "count" },
 ];
 const XLS_KEY = LS_KEY + "-xlsFields2";   // 項目を変えたので、選択の記憶を新しくする
 let xlsPick = new Set(FIELDS.filter(f => f.group !== "記録").map(f => f.key));
-try { const saved = JSON.parse(localStorage.getItem(XLS_KEY) || "null"); if (Array.isArray(saved)) xlsPick = new Set(saved); } catch (e) {}
+try {
+  const saved = JSON.parse(localStorage.getItem(XLS_KEY) || "null");
+  if (Array.isArray(saved)) {
+    xlsPick = new Set(saved);
+    // 「本数」が増える前の選択を使っている人は、容量を選んでいれば本数も選んだ状態にする
+    if (!localStorage.getItem(XLS_KEY + "-cylCount")) { if (xlsPick.has("capacity")) xlsPick.add("cylCount"); localStorage.setItem(XLS_KEY + "-cylCount", "1"); }
+  }
+} catch (e) {}
 xlsPick.add("name");
 
 // 今の一覧(検索・絞り込み)に出ている人を、一覧と同じ順番で返す
@@ -400,7 +408,7 @@ function matches(c, q) {
   if (filter === "done" && c.lastDelivered !== today()) return false;
   if (!q) return true;
   // 名前・住所・メーター・ボンベのどの項目でも探せる
-  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.cylNo, c.capacity].join(" ").toLowerCase();
+  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.cylNo, c.capacity, c.cylCount].join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
@@ -467,7 +475,7 @@ function detailHTML(c) {
         ${specRow("会社名", c.regMaker)}${specRow("型式", c.regModel, true)}${specRow("型", c.regType)}${expiryRow(c.regExpiry)}
       </dl></section>
       <section class="spec"><h3>ボンベ</h3><dl>
-        ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}
+        ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}${specRow("本数", c.cylCount, true)}
       </dl></section>
       <div class="meta">
         <span>前回配達 <b>${fmtDate(c.lastDelivered)}</b>${ago != null && ago > 0 ? `(${ago}日前)` : ""}</span>
@@ -641,6 +649,7 @@ function openSheet(c) {
     $("#f-cap").insertAdjacentHTML("beforeend", `<option class="old" value="${esc(c.capacity)}">${esc(c.capacity)}(以前の値)</option>`);
   }
   $("#f-cap").value = c?.capacity || "";
+  $("#f-cylcount").value = c?.cylCount || "";
   pendingPhoto = undefined;
   showFormPhoto(null);
   if (c?.photoId) photoURL(c.photoId, "full").then(u => { if (pendingPhoto === undefined && editingId === c.id) showFormPhoto(u); }).catch(() => {});
@@ -705,6 +714,7 @@ $("#form").addEventListener("submit", async e => {
     regExpiry,
     cylNo: $("#f-cyl").value.trim(),
     capacity: $("#f-cap").value,
+    cylCount: $("#f-cylcount").value,
   };
   $("#f-save").disabled = true;
   try {

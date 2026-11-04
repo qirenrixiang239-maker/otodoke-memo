@@ -114,11 +114,15 @@
 
     <!-- ボンベの情報 -->
     <div class="group-title">ボンベ</div>
+    <div class="field"><label for="f-cyl">ボンベの番号</label><input id="f-cyl" placeholder="例：A-12345" autocomplete="off" autocapitalize="characters"></div>
     <div class="two">
-      <div class="field"><label for="f-cyl">ボンベの番号</label><input id="f-cyl" placeholder="例：A-12345" autocomplete="off" autocapitalize="characters"></div>
       <!-- 容量は 10kg・20kg・50kg から選ぶ -->
       <div class="field"><label for="f-cap">容量</label>
         <select id="f-cap"><option value="">未選択</option><option value="10kg">10kg</option><option value="20kg">20kg</option><option value="50kg">50kg</option></select>
+      </div>
+      <!-- 本数は 1〜4本 から選ぶ -->
+      <div class="field"><label for="f-cylcount">本数</label>
+        <select id="f-cylcount"><option value="">未選択</option><option value="1本">1本</option><option value="2本">2本</option><option value="3本">3本</option><option value="4本">4本</option></select>
       </div>
     </div>
 
