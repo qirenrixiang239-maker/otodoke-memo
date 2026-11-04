@@ -80,33 +80,115 @@ async function init() {
   else customers = saved;
   mode = "local";
   render();
+  loadThumbs();
+  try { await cleanupPhotos(); } catch (e) {}
   // 端末の容量が少なくなっても、勝手に消されないようにお願いする
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
 }
 
+/* ===== 2-1. 建物の写真(この端末の中だけ) ===== */
+// 写真は大きいので、お客さんのデータ(localStorage)とは別の、写真用の保存場所(IndexedDB)に入れる。
+// お客さんのデータには、写真の名前(photoId)だけを書いておく。
+const PHOTO_FULL_PX = 1280, PHOTO_THUMB_PX = 160;   // 保存するときの大きさ(長い辺のピクセル数)
+let photoDBp = null;
+function photoDB() {
+  if (!photoDBp) photoDBp = new Promise((ok, ng) => {
+    const r = indexedDB.open("otodoke-photos", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("photos");
+    r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error);
+  });
+  return photoDBp;
+}
+async function photoStore(mode, fn) {
+  const db = await photoDB();
+  return new Promise((ok, ng) => {
+    const tx = db.transaction("photos", mode); const req = fn(tx.objectStore("photos"));
+    tx.oncomplete = () => ok(req && req.result); tx.onerror = () => ng(tx.error); tx.onabort = () => ng(tx.error);
+  });
+}
+const putPhoto = (id, rec) => photoStore("readwrite", st => st.put(rec, id));   // rec = { full: 画像, thumb: 小さい画像 }
+const getPhoto = id => photoStore("readonly", st => st.get(id));
+const delPhoto = id => photoStore("readwrite", st => st.delete(id));
+const allPhotoIds = () => photoStore("readonly", st => st.getAllKeys());
+
+// 写真を表示するための一時的なアドレス(一度作ったら覚えておく)
+const photoURLs = {};   // { photoId: { thumb: "blob:…", full: "blob:…" } }
+async function photoURL(id, size) {
+  if (photoURLs[id]?.[size]) return photoURLs[id][size];
+  const rec = await getPhoto(id); if (!rec?.[size]) return null;
+  (photoURLs[id] ||= {})[size] = URL.createObjectURL(rec[size]);
+  return photoURLs[id][size];
+}
+// 一覧に出す小さな写真をまとめて読み込み、読み終わったら一覧を描き直す
+async function loadThumbs() {
+  const need = customers.filter(c => c.photoId && !photoURLs[c.photoId]?.thumb);
+  if (!need.length) return;
+  for (const c of need) { try { await photoURL(c.photoId, "thumb"); } catch (e) {} }
+  render();
+}
+
+// 写真を小さくして JPEG にする(向きはスマホの撮影向きに合わせる)
+async function shrinkImage(blob, maxPx, quality) {
+  let src;
+  try { src = await createImageBitmap(blob, { imageOrientation: "from-image" }); }
+  catch (e) {   // 古い端末向け:img 要素で読み込む
+    src = await new Promise((ok, ng) => { const im = new Image(); im.onload = () => ok(im); im.onerror = ng; im.src = URL.createObjectURL(blob); });
+  }
+  const w0 = src.width, h0 = src.height, k = Math.min(1, maxPx / Math.max(w0, h0));
+  const cv = document.createElement("canvas"); cv.width = Math.round(w0 * k); cv.height = Math.round(h0 * k);
+  cv.getContext("2d").drawImage(src, 0, 0, cv.width, cv.height);
+  return new Promise((ok, ng) => cv.toBlob(b => b ? ok(b) : ng(new Error("toBlob")), "image/jpeg", quality));
+}
+async function makePhoto(blob) {
+  const full = await shrinkImage(blob, PHOTO_FULL_PX, 0.78);
+  const thumb = await shrinkImage(full, PHOTO_THUMB_PX, 0.72);
+  return { full, thumb };
+}
+// どのお客さんにも使われていない写真を片付ける(起動したときに行う)
+async function cleanupPhotos() {
+  const used = new Set(customers.map(c => c.photoId).filter(Boolean));
+  for (const id of await allPhotoIds()) if (!used.has(id)) await delPhoto(id);
+}
+
 /* ===== 2-2. バックアップ(機種変更・端末の間の引っ越し用) ===== */
 // 全データを1つのファイルに書き出す
-function exportBackup() {
-  const json = JSON.stringify({ app: "otodoke-memo", version: 1, exportedAt: new Date().toISOString(), customers }, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `otodoke-memo_${today()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  try { localStorage.setItem(LS_KEY + "-lastBackup", today()); } catch (e) {}
-  renderBackupInfo();
-  toast(`${customers.length}件を書き出しました`);
+// 画像 ⇔ 文字(バックアップファイルに入れるため)
+const blobToDataURL = blob => new Promise((ok, ng) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ng; r.readAsDataURL(blob); });
+const dataURLToBlob = async d => (await fetch(d)).blob();
+
+// 全データを1つのファイルに書き出す(写真も入れる)
+async function exportBackup() {
+  $("#b-export").disabled = true; $("#b-export").textContent = "書き出しています…";
+  try {
+    const photos = {};
+    for (const c of customers) if (c.photoId && !photos[c.photoId]) {
+      try { const rec = await getPhoto(c.photoId); if (rec?.full) photos[c.photoId] = await blobToDataURL(rec.full); } catch (e) {}
+    }
+    const json = JSON.stringify({ app: "otodoke-memo", version: 2, exportedAt: new Date().toISOString(), customers, photos });
+    const blob = new Blob([json], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `otodoke-memo_${today()}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    try { localStorage.setItem(LS_KEY + "-lastBackup", today()); } catch (e) {}
+    renderBackupInfo();
+    const n = Object.keys(photos).length;
+    toast(`${customers.length}件を書き出しました${n ? `(写真${n}枚)` : ""}`);
+  } finally { $("#b-export").disabled = false; $("#b-export").textContent = "データを書き出す"; }
 }
-// 書き出したファイルを読み込んで、データを置き換える
+// 書き出したファイルを読み込んで、データを置き換える(写真なしの古いファイルも読める)
 async function importBackup(file) {
   try {
     const obj = JSON.parse(await file.text());
     if (!obj || obj.app !== "otodoke-memo" || !Array.isArray(obj.customers)) throw new Error("bad");
+    for (const [id, d] of Object.entries(obj.photos || {})) {
+      try { const full = await dataURLToBlob(d); await putPhoto(id, { full, thumb: await shrinkImage(full, PHOTO_THUMB_PX, 0.72) }); } catch (e) {}
+    }
     const before = customers;
     customers = obj.customers;
-    saveLocal(); render(); closeBackup();
-    toast(`${customers.length}件を読み込みました`, () => { customers = before; saveLocal(); render(); });
+    saveLocal(); render(); loadThumbs(); closeBackup();
+    toast(`${customers.length}件を読み込みました`, () => { customers = before; saveLocal(); render(); loadThumbs(); });
   } catch (e) {
     $("#b-err").textContent = "このファイルは読み込めません。お届け先メモで書き出したファイル(.json)を選んでください。";
     $("#b-err").hidden = false;
@@ -114,7 +196,8 @@ async function importBackup(file) {
 }
 function renderBackupInfo() {
   let last = null; try { last = localStorage.getItem(LS_KEY + "-lastBackup"); } catch (e) {}
-  $("#b-info").textContent = `この端末に ${customers.length}件 保存されています。前回の書き出し:${last ? fmtDate(last) : "まだありません"}`;
+  const np = customers.filter(c => c.photoId).length;
+  $("#b-info").textContent = `この端末に ${customers.length}件(写真${np}枚)保存されています。前回の書き出し:${last ? fmtDate(last) : "まだありません"}。写真もファイルに入るので、写真が多いとファイルが大きくなります。`;
 }
 function openBackup() { renderBackupInfo(); $("#b-err").hidden = true; $("#scrim").hidden = false; $("#backup").hidden = false; }
 function closeBackup() { $("#backup").hidden = true; if ($("#sheet").hidden) $("#scrim").hidden = true; }
@@ -326,10 +409,15 @@ function renderFilters() {
   $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
 }
 
-// 一覧の1行(名前と住所だけ)。押すと詳細画面が開く
+// 写真がない人に出す、家の形の印
+const HOUSE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg>`;
+
+// 一覧の1行(写真・名前・住所)。押すと詳細画面が開く
 function row(c) {
   const done = c.lastDelivered === today();
+  const t = c.photoId && photoURLs[c.photoId]?.thumb;
   return `<button type="button" class="row${done ? " done" : ""}" data-id="${esc(c.id)}">
+    <span class="thumb">${t ? `<img src="${t}" alt="">` : HOUSE_ICON}</span>
     <span class="row-text">
       <span class="name">${esc(c.name)}</span>
       ${c.address ? `<span class="addr">${esc(c.address)}</span>` : ""}
@@ -364,6 +452,9 @@ function detailHTML(c) {
       <button type="button" class="d-edit" data-act="edit">編集</button>
     </header>
     <div class="d-body">
+      ${c.photoId ? (photoURLs[c.photoId]?.full
+        ? `<button type="button" class="d-photo" data-act="photo" aria-label="写真を大きく表示"><img src="${photoURLs[c.photoId].full}" alt="建物の写真"></button>`
+        : `<div class="d-photo loading">写真を読み込んでいます…</div>`) : ""}
       <div class="d-head">
         <h2 class="d-name">${esc(c.name)}</h2>
         ${c.address ? `<p class="d-addr">${esc(c.address)}</p>` : `<p class="d-addr none">住所 未入力</p>`}
@@ -413,6 +504,8 @@ function renderDetail() {
   const c = customers.find(x => x.id === detailId);
   if (!c) return closeDetail();
   $("#detail").innerHTML = detailHTML(c);
+  // 大きな写真がまだ読み込まれていなければ、読み込んでから描き直す
+  if (c.photoId && !photoURLs[c.photoId]?.full) photoURL(c.photoId, "full").then(u => { if (u && detailId === c.id) renderDetail(); }).catch(() => {});
 }
 
 // 一覧全体を描き直す(データが変わるたびに呼ばれる)
@@ -463,6 +556,7 @@ $("#list").addEventListener("click", e => {
 $("#detail").addEventListener("click", async e => {
   const btn = e.target.closest("button[data-act]"); if (!btn) return;
   if (btn.dataset.act === "back") return closeDetail();
+  if (btn.dataset.act === "photo") { $("#viewer-img").src = btn.querySelector("img").src; $("#viewer").hidden = false; return; }
   const c = customers.find(x => x.id === detailId); if (!c) return;
   const before = { ...c };
   if (btn.dataset.act === "edit") return openSheet(c);
@@ -475,8 +569,12 @@ $("#detail").addEventListener("click", async e => {
     toast(`${c.name}さん 不在を記録（${(c.absent || 0) + 1}回目）`, () => writeDoc(before));
   }
 });
+// 大きな写真を押したら閉じる
+$("#viewer").addEventListener("click", () => { $("#viewer").hidden = true; });
+
 // スマホの「戻る」操作をしたとき
 window.addEventListener("popstate", () => {
+  if (!$("#viewer").hidden) { $("#viewer").hidden = true; if (detailId) { try { history.pushState({ detail: detailId }, ""); } catch (e) {} } return; }
   // 入力画面やバックアップ画面が開いていたら、それだけを閉じる
   if (!$("#sheet").hidden || !$("#backup").hidden || !$("#xls").hidden) {
     closeSheet(); closeBackup(); closeXls();
@@ -493,6 +591,33 @@ $("#qclear").addEventListener("click", () => { $("#q").value = ""; render(); $("
 
 /* ===== 5. 追加・編集画面 ===== */
 let delArmed = false;
+// 入力画面で写真をどうするか:undefined=変えない / null=外す / {full, thumb, url}=新しい写真
+let pendingPhoto;
+
+// 入力画面の写真の表示を更新する
+function showFormPhoto(url) {
+  $("#f-photo-img").hidden = !url; if (url) $("#f-photo-img").src = url;
+  $("#f-photo-empty").hidden = !!url;
+  $("#f-photo-box").classList.toggle("has", !!url);
+  $("#f-photo-del").hidden = !url;
+  $("#f-photo-pick").textContent = url ? "写真を撮り直す・選び直す" : "写真を撮る・選ぶ";
+}
+// 写真を撮った・選んだとき
+$("#f-photo").addEventListener("change", async e => {
+  const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+  $("#f-photo-empty").textContent = "準備しています…"; $("#f-photo-empty").hidden = false; $("#f-photo-img").hidden = true;
+  try {
+    const ph = await makePhoto(file);
+    if (pendingPhoto?.url) URL.revokeObjectURL(pendingPhoto.url);
+    pendingPhoto = { ...ph, url: URL.createObjectURL(ph.full) };
+    showFormPhoto(pendingPhoto.url);
+  } catch (err) {
+    $("#f-err").textContent = "この写真は使えませんでした。別の写真を選ぶか、撮り直してください。"; $("#f-err").hidden = false;
+    showFormPhoto(null);
+  } finally { $("#f-photo-empty").textContent = "写真なし"; }
+});
+// 写真を外す
+$("#f-photo-del").addEventListener("click", () => { pendingPhoto = null; showFormPhoto(null); });
 
 
 // 入力画面を開く(c があれば編集、なければ新規追加)
@@ -516,6 +641,9 @@ function openSheet(c) {
     $("#f-cap").insertAdjacentHTML("beforeend", `<option class="old" value="${esc(c.capacity)}">${esc(c.capacity)}(以前の値)</option>`);
   }
   $("#f-cap").value = c?.capacity || "";
+  pendingPhoto = undefined;
+  showFormPhoto(null);
+  if (c?.photoId) photoURL(c.photoId, "full").then(u => { if (pendingPhoto === undefined && editingId === c.id) showFormPhoto(u); }).catch(() => {});
   $("#f-err").hidden = true;
   $("#f-delwrap").hidden = !c;
   delArmed = false; $("#f-del").textContent = "このお届け先を削除";
@@ -547,6 +675,7 @@ $("#f-cancel").addEventListener("click", closeSheet);
 $("#scrim").addEventListener("click", () => { closeSheet(); closeBackup(); closeXls(); });
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  if (!$("#viewer").hidden) { $("#viewer").hidden = true; return; }
   if (!$("#sheet").hidden) return closeSheet();
   if (!$("#backup").hidden) return closeBackup();
   if (!$("#xls").hidden) return closeXls();
@@ -579,6 +708,13 @@ $("#form").addEventListener("submit", async e => {
   };
   $("#f-save").disabled = true;
   try {
+    // 新しい写真は、新しい名前で保存する(古い写真は「元に戻す」に備えて、次に起動したときに片付ける)
+    if (pendingPhoto) {
+      const pid = "p" + newId();
+      await putPhoto(pid, { full: pendingPhoto.full, thumb: pendingPhoto.thumb });
+      photoURLs[pid] = { full: pendingPhoto.url, thumb: URL.createObjectURL(pendingPhoto.thumb) };
+      c.photoId = pid; pendingPhoto = undefined;
+    } else if (pendingPhoto === null) c.photoId = "";
     await writeDoc(c); closeSheet();
     // 5秒以内なら「元に戻す」で取り消せる(編集→編集前に戻す/追加→追加を取り消す)
     if (old) toast(`${name}さんの情報を変更しました`, () => writeDoc(old));

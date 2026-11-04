@@ -68,6 +68,18 @@
     <div class="field"><label for="f-name">お客さんの名前</label><input id="f-name" required placeholder="例：田中" autocomplete="off"></div>
     <div class="field"><label for="f-addr">住所</label><input id="f-addr" placeholder="例：岩村田1234" autocomplete="off"></div>
 
+    <!-- 建物の写真(1人1枚)。撮るか、アルバムから選ぶ -->
+    <div class="field"><span class="lab">建物の写真</span>
+      <div class="photo-edit">
+        <div class="photo-box" id="f-photo-box"><span id="f-photo-empty">写真なし</span><img id="f-photo-img" alt="建物の写真" hidden></div>
+        <div class="photo-btns">
+          <label class="btn ghost filebtn" for="f-photo" id="f-photo-pick">写真を撮る・選ぶ</label>
+          <button type="button" class="btn ghost" id="f-photo-del" hidden>写真を外す</button>
+        </div>
+        <input type="file" id="f-photo" accept="image/*" hidden>
+      </div>
+    </div>
+
     <!-- メーターの情報 -->
     <div class="group-title">メーター</div>
     <div class="field"><label for="f-maker">会社名</label><input id="f-maker" list="makers" placeholder="例：〇〇計器" autocomplete="off"></div>
@@ -166,6 +178,9 @@
     </div>
   </div>
 </div>
+
+<!-- ▼ 写真を画面いっぱいに表示する。押すと閉じる -->
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="建物の写真"><img id="viewer-img" alt="建物の写真"><span class="viewer-hint">タップで閉じる</span></div>
 
 <!-- ▼ 画面下に一瞬出るお知らせ(「元に戻す」ボタン付き) -->
 <div class="toast" id="toast" hidden role="status"><span id="toast-msg"></span><button id="toast-undo">元に戻す</button></div>
