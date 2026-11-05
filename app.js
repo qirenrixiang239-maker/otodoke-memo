@@ -80,7 +80,6 @@ async function init() {
   else customers = saved;
   mode = "local";
   render();
-  loadThumbs();
   try { await cleanupPhotos(); } catch (e) {}
   // 端末の容量が少なくなっても、勝手に消されないようにお願いする
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
@@ -118,13 +117,6 @@ async function photoURL(id, size) {
   const rec = await getPhoto(id); if (!rec?.[size]) return null;
   (photoURLs[id] ||= {})[size] = URL.createObjectURL(rec[size]);
   return photoURLs[id][size];
-}
-// 一覧に出す小さな写真をまとめて読み込み、読み終わったら一覧を描き直す
-async function loadThumbs() {
-  const need = customers.filter(c => c.photoId && !photoURLs[c.photoId]?.thumb);
-  if (!need.length) return;
-  for (const c of need) { try { await photoURL(c.photoId, "thumb"); } catch (e) {} }
-  render();
 }
 
 // 写真を小さくして JPEG にする(向きはスマホの撮影向きに合わせる)
@@ -187,8 +179,8 @@ async function importBackup(file) {
     }
     const before = customers;
     customers = obj.customers;
-    saveLocal(); render(); loadThumbs(); closeBackup();
-    toast(`${customers.length}件を読み込みました`, () => { customers = before; saveLocal(); render(); loadThumbs(); });
+    saveLocal(); render(); closeBackup();
+    toast(`${customers.length}件を読み込みました`, () => { customers = before; saveLocal(); render(); });
   } catch (e) {
     $("#b-err").textContent = "このファイルは読み込めません。お届け先メモで書き出したファイル(.json)を選んでください。";
     $("#b-err").hidden = false;
@@ -417,15 +409,10 @@ function renderFilters() {
   $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
 }
 
-// 写真がない人に出す、家の形の印
-const HOUSE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg>`;
-
-// 一覧の1行(写真・名前・住所)。押すと詳細画面が開く
+// 一覧の1行(名前と住所だけ。写真は詳細画面に出す)。押すと詳細画面が開く
 function row(c) {
   const done = c.lastDelivered === today();
-  const t = c.photoId && photoURLs[c.photoId]?.thumb;
   return `<button type="button" class="row${done ? " done" : ""}" data-id="${esc(c.id)}">
-    <span class="thumb">${t ? `<img src="${t}" alt="">` : HOUSE_ICON}</span>
     <span class="row-text">
       <span class="name">${esc(c.name)}</span>
       ${c.address ? `<span class="addr">${esc(c.address)}</span>` : ""}
