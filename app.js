@@ -71,8 +71,8 @@ function showNotice(msg) { $("#notice").innerHTML = msg ? `<div class="notice">$
 
 // 初めて起動したときだけ入れる見本データ(「(例)」付き。不要なら削除してOK)
 const EXAMPLES = [
-  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterPitch: "130", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regType: "N型", regExpiry: "2027-02", cylNo: "C-20481", capacity: "50kg", cylCount: "2本", absent: 0, lastDelivered: "" },
-  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterPitch: "90", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regType: "F型", regExpiry: "2033-11", cylNo: "C-11730", capacity: "20kg", cylCount: "1本", absent: 0, lastDelivered: "" },
+  { id: "ex1", name: "（例）田中", address: "岩村田1234", meterMaker: "（例）サンプル計器", meterModel: "NB4-X", meterPitch: "130", meterExpiry: "2031-03", regMaker: "（例）サンプル製作所", regModel: "R-10K", regType: "N型", regExpiry: "2027-02", capacity: "50kg", cylCount: "2本", absent: 0, lastDelivered: "" },
+  { id: "ex2", name: "（例）佐藤", address: "岩村田2051", meterMaker: "（例）サンプル計器", meterModel: "NB6-Y", meterPitch: "90", meterExpiry: "2026-09", regMaker: "（例）サンプル製作所", regModel: "R-5K", regType: "F型", regExpiry: "2033-11", capacity: "20kg", cylCount: "1本", absent: 0, lastDelivered: "" },
 ];
 
 // アプリ起動時の処理:端末の中からデータを読み込む
@@ -209,7 +209,6 @@ const FIELDS = [
   { key: "regModel", group: "調整器", label: "型式" },
   { key: "regType", group: "調整器", label: "型" },
   { key: "regExpiry", group: "調整器", label: "期限", type: "ym" },
-  { key: "cylNo", group: "ボンベ", label: "番号" },
   { key: "capacity", group: "ボンベ", label: "容量" },
   { key: "cylCount", group: "ボンベ", label: "本数" },
   { key: "lastDelivered", group: "記録", label: "前回配達", type: "date" },
@@ -373,13 +372,13 @@ async function buildWorkbook(list, fields) {
   const ex = list.flatMap(c => (c.exchanges || []).map(x => ({ c, x }))).sort((a, b) => b.x.date.localeCompare(a.x.date) || byAddr(a.c, b.c));
   if (ex.length) {
     const xs = wb.addWorksheet("交換履歴", { views: [{ state: "frozen", ySplit: 1 }] });
-    xs.addRow(["交換した日", "名前", "住所", "入り(古い)", "出(新しい)"]);
-    ex.forEach(({ c, x }) => xs.addRow([x.date.replace(/-/g, "/"), c.name || "", c.address || "", x.inNo || "", x.outNo || ""]));
+    xs.addRow(["交換した日", "名前", "住所", "本目", "入り(古い)", "出(新しい)"]);
+    ex.forEach(({ c, x }) => exItems(x).forEach((it, n) => xs.addRow([x.date.replace(/-/g, "/"), c.name || "", c.address || "", n + 1, it.inNo || "", it.outNo || ""])));
     xs.getRow(1).font = { bold: true };
-    [12, 16, 26, 16, 16].forEach((w, i) => { xs.getColumn(i + 1).width = w; });
+    [12, 16, 26, 6, 16, 16].forEach((w, i) => { xs.getColumn(i + 1).width = w; });
     xs.eachRow(r => r.eachCell(cell => { cell.border = border; }));
     xs.getRow(1).eachCell(cell => { cell.fill = headFill; });
-    xs.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 5 } };
+    xs.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 6 } };
     xs.pageSetup = { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:1",
       margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.25, footer: 0.25 } };
     xs.headerFooter = { oddHeader: "&L&10ボンベ交換の履歴", oddFooter: "&C&10&P / &N ページ" };
@@ -417,7 +416,7 @@ function matches(c, q) {
   if (filter === "done" && c.lastDelivered !== today()) return false;
   if (!q) return true;
   // 名前・住所・メーター・ボンベのどの項目でも探せる
-  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.cylNo, c.capacity, c.cylCount, ...(c.exchanges || []).flatMap(x => [x.inNo, x.outNo])].join(" ").toLowerCase();
+  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.capacity, c.cylCount, ...(c.exchanges || []).flatMap(x => exItems(x).flatMap(i => [i.inNo, i.outNo]))].join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
@@ -454,6 +453,21 @@ function expiryRow(value) {
   return `<dt>期限</dt><dd class="num">${fmtYM(value)}${badge}</dd>`;
 }
 
+// 1回の交換記録に入っているボンベ(最大2本)。以前の1本だけの記録も同じ形にそろえる
+const exItems = x => (x.items || [{ inNo: x.inNo || "", outNo: x.outNo || "" }]).filter(i => i.inNo || i.outNo);
+
+// 今そのお宅に付いているボンベの番号(最大2本)を、交換の記録を古い順にたどって求める
+// (入りの番号を外して、出の番号を付ける。記録がない人は、以前の「ボンベの番号」から始める)
+function installedCyls(c) {
+  let cur = c.cylNo ? [c.cylNo] : [];
+  for (const x of sortedExch(c).reverse()) for (const it of exItems(x)) {
+    const i = it.inNo ? cur.indexOf(it.inNo) : -1;
+    if (i >= 0) { if (it.outNo) cur[i] = it.outNo; else cur.splice(i, 1); }
+    else if (it.outNo) cur.push(it.outNo);
+  }
+  return cur.slice(-2);
+}
+
 // ボンベ交換の履歴(新しい順)。最初は5件まで出し、「すべて表示」で全部出す
 let exchShowAll = false;
 const sortedExch = c => (c.exchanges || []).slice().sort((a, b) => b.date.localeCompare(a.date) || (b.at || "").localeCompare(a.at || ""));
@@ -464,7 +478,7 @@ function exchHTML(c) {
     <div class="exch-head"><h3>ボンベ交換の履歴</h3><button type="button" class="exch-add" data-act="exch-new">＋ 交換を記録</button></div>
     ${list.length ? `<ul class="exch-list">${shown.map(x => `<li><button type="button" class="exch-item" data-act="exch-edit" data-eid="${esc(x.id)}" aria-label="${fmtDay(x.date)} の記録を直す">
         <span class="exch-date">${fmtDay(x.date)}</span>
-        <span class="exch-nos"><span><i class="k in">入り</i><b>${x.inNo ? esc(x.inNo) : "—"}</b></span><span><i class="k out">出</i><b>${x.outNo ? esc(x.outNo) : "—"}</b></span></span>
+        <span class="exch-nos">${exItems(x).map((it, n, all) => `<span class="exch-pair">${all.length > 1 ? `<span class="n">${n + 1}本目</span>` : ""}<span><i class="k in">入り</i><b>${it.inNo ? esc(it.inNo) : "—"}</b></span><span><i class="k out">出</i><b>${it.outNo ? esc(it.outNo) : "—"}</b></span></span>`).join("")}</span>
       </button></li>`).join("")}</ul>
       ${list.length > 5 && !exchShowAll ? `<button type="button" class="exch-more" data-act="exch-all">すべて表示(${list.length}件)</button>` : ""}`
       : `<p class="exch-empty">まだ記録がありません。交換したら「＋ 交換を記録」から入り・出の番号を残せます。</p>`}
@@ -496,7 +510,7 @@ function detailHTML(c) {
         ${specRow("会社名", c.regMaker)}${specRow("型式", c.regModel, true)}${specRow("型", c.regType)}${expiryRow(c.regExpiry)}
       </dl></section>
       <section class="spec"><h3>ボンベ</h3><dl>
-        ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}${specRow("本数", c.cylCount, true)}
+        ${specRow("容量", c.capacity, true)}${specRow("本数", c.cylCount, true)}
       </dl></section>
       ${exchHTML(c)}
       <div class="meta">
@@ -670,7 +684,6 @@ function openSheet(c) {
   $("#f-regmodel").value = c?.regModel || "";
   $("#f-regtype").value = c?.regType || "";
   $("#f-regexp").value = c?.regExpiry || "";
-  $("#f-cyl").value = c?.cylNo || "";
   // 以前に選択肢以外の容量(30kg など)が入っていた人は、消えないようにその値も選べるようにしておく
   $("#f-cap").querySelectorAll("option.old").forEach(o => o.remove());
   if (c?.capacity && ![...$("#f-cap").options].some(o => o.value === c.capacity)) {
@@ -691,6 +704,7 @@ function closeSheet() { $("#scrim").hidden = true; $("#sheet").hidden = true; ed
 
 /* ===== 6. ボンベ交換の記録 ===== */
 let exchCustId = null, exchEditId = null, exchDelArmed = false;
+let exchPrefill = [];   // 新しく記録するとき、最初から「入り」に入れておいた番号
 // 交換の記録画面を開く(entry があれば、その記録を直す)
 function openExch(c, entry) {
   exchCustId = c.id; exchEditId = entry ? entry.id : null; exchDelArmed = false;
@@ -698,14 +712,20 @@ function openExch(c, entry) {
   $("#e-who").textContent = `${c.name}さん${c.address ? " ・ " + c.address : ""}`;
   $("#e-date").value = entry ? entry.date : today();
   // 新しく記録するときは、今付いているボンベの番号を「入り」に入れておく
-  $("#e-in").value = entry ? (entry.inNo || "") : (c.cylNo || "");
-  $("#e-out").value = entry ? (entry.outNo || "") : "";
+  // 直すときはその記録の番号、新しく記録するときは今付いているボンベの番号を「入り」に入れておく
+  const its = entry ? exItems(entry) : [];
+  const lastOut = entry ? [] : installedCyls(c);
+  exchPrefill = entry ? [] : lastOut;
+  [1, 2].forEach(n => {
+    $("#e-in" + n).value = entry ? (its[n - 1]?.inNo || "") : (lastOut[n - 1] || "");
+    $("#e-out" + n).value = entry ? (its[n - 1]?.outNo || "") : "";
+  });
   $("#e-note").hidden = !!entry;
   $("#e-save").textContent = entry ? "保存する" : "記録する";
   $("#e-delwrap").hidden = !entry; $("#e-del").textContent = "この記録を削除";
   $("#e-err").hidden = true;
   $("#scrim").hidden = false; $("#exch").hidden = false;
-  setTimeout(() => (entry ? $("#e-in") : $("#e-out")).focus(), 50);
+  setTimeout(() => (entry ? $("#e-in1") : $("#e-out1")).focus(), 50);
 }
 function closeExch() { $("#exch").hidden = true; exchCustId = exchEditId = null; if ($("#sheet").hidden && $("#backup").hidden && $("#xls").hidden) $("#scrim").hidden = true; }
 $("#e-cancel").addEventListener("click", closeExch);
@@ -714,33 +734,32 @@ $("#e-cancel").addEventListener("click", closeExch);
 $("#exch-form").addEventListener("submit", async e => {
   e.preventDefault();
   const c = customers.find(x => x.id === exchCustId); if (!c) return closeExch();
-  const date = $("#e-date").value, inNo = $("#e-in").value.trim(), outNo = $("#e-out").value.trim();
+  const date = $("#e-date").value;
+  // 最初から入っていた「入り」のまま「出」が空の行は、交換しなかったボンベとみなして記録しない
+  const items = [1, 2].map(n => ({ n, inNo: $("#e-in" + n).value.trim(), outNo: $("#e-out" + n).value.trim() }))
+    .filter(i => (i.inNo || i.outNo) && !(!exchEditId && !i.outNo && i.inNo === (exchPrefill[i.n - 1] || "")))
+    .map(({ inNo, outNo }) => ({ inNo, outNo }));
   const err = m => { $("#e-err").textContent = m; $("#e-err").hidden = false; };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return err("交換した日を入れてください。");
-  if (!inNo && !outNo) return err("入りか出の番号を、少なくとも1つ入れてください。");
+  if (!items.length) return err("出(新しいボンベ)の番号を入れてください。");
   const before = { ...c, exchanges: (c.exchanges || []).slice() };
   const list = (c.exchanges || []).slice();
-  let next, rec, oldOut = null;
+  let next;
   if (exchEditId) {
     // 記録を直すときは、その記録だけを書き換える
     const i = list.findIndex(x => x.id === exchEditId);
-    if (i >= 0) { oldOut = list[i].outNo; rec = list[i] = { ...list[i], date, inNo, outNo }; }
+    if (i >= 0) { const { inNo, outNo, ...rest } = list[i]; list[i] = { ...rest, date, items }; }
     next = { ...c, exchanges: list };
   } else {
-    rec = { id: "x" + newId(), date, inNo, outNo, at: new Date().toISOString() };
-    list.push(rec);
+    list.push({ id: "x" + newId(), date, items, at: new Date().toISOString() });
     next = { ...c, exchanges: list };
     // 前回配達日をこの日にする(より新しい日のときだけ)
     if (!c.lastDelivered || date >= c.lastDelivered) next.lastDelivered = date;
   }
-  // 一番新しい交換の記録なら、今付いているボンベの番号を「出」の番号にする
-  // (過去の分をあとから記録したときや、手で直した番号は変えない)
-  const newest = sortedExch(next)[0];
-  if (rec && outNo && newest && newest.id === rec.id && (!exchEditId || c.cylNo === oldOut || !c.cylNo)) next.cylNo = outNo;
   await writeDoc(next);
   const wasEdit = !!exchEditId;
   closeExch();
-  toast(wasEdit ? "交換の記録を直しました" : `${c.name}さん 交換を記録(${fmtDay(date)})`, () => writeDoc(before));
+  toast(wasEdit ? "交換の記録を直しました" : `${c.name}さん ${items.length}本の交換を記録(${fmtDay(date)})`, () => writeDoc(before));
 });
 
 // 記録の削除(押し間違い防止のため2回押しで削除)
@@ -805,7 +824,6 @@ $("#form").addEventListener("submit", async e => {
     regModel: $("#f-regmodel").value.trim(),
     regType: $("#f-regtype").value,
     regExpiry,
-    cylNo: $("#f-cyl").value.trim(),
     capacity: $("#f-cap").value,
     cylCount: $("#f-cylcount").value,
   };
