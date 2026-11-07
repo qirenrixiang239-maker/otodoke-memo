@@ -183,6 +183,29 @@
   </div>
 </div>
 
+<!-- ▼ ボンベ交換の記録画面(詳細画面の「交換を記録」から開く)。普段は hidden で隠れている -->
+<div class="sheet" id="exch" hidden role="dialog" aria-modal="true" aria-labelledby="exch-title">
+  <form class="sheet-in" id="exch-form" novalidate>
+    <div class="grab"></div>
+    <h3 id="exch-title">ボンベ交換を記録</h3>
+    <p class="b-text" id="e-who"></p>
+    <div class="two">
+      <div class="field"><label for="e-date">交換した日</label><input id="e-date" type="date"></div>
+    </div>
+    <div class="field"><label for="e-in">入り(回収した古いボンベ)の番号</label><input id="e-in" placeholder="例：C-20481" autocomplete="off" autocapitalize="characters"></div>
+    <div class="field"><label for="e-out">出(設置した新しいボンベ)の番号</label><input id="e-out" placeholder="例：C-31507" autocomplete="off" autocapitalize="characters"></div>
+    <p class="b-text small" id="e-note">一番新しい交換として記録すると、このお客さんの「ボンベの番号」が出の番号に変わり、前回配達日がこの日になります。</p>
+    <div class="err" id="e-err" hidden></div>
+    <div class="sheet-actions">
+      <button type="button" class="btn ghost" id="e-cancel">閉じる</button>
+      <button type="submit" class="btn primary" id="e-save">記録する</button>
+    </div>
+    <div class="sheet-actions" id="e-delwrap" hidden>
+      <button type="button" class="btn danger" id="e-del">この記録を削除</button>
+    </div>
+  </form>
+</div>
+
 <!-- ▼ 写真を画面いっぱいに表示する。押すと閉じる -->
 <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="建物の写真"><img id="viewer-img" alt="建物の写真"><span class="viewer-hint">タップで閉じる</span></div>
 

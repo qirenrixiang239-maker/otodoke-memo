@@ -31,6 +31,8 @@ let undoFn = null, toastTimer = null;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+// 「2026-11-08」を「2026/11/08(日)」の表示にする
+const fmtDay = s => { const [y, m, d] = s.split("-").map(Number); return `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}(${"日月火水木金土"[new Date(y, m - 1, d).getDay()]})`; };
 const fmtDate = s => { if (!s) return "—"; const [y, m, d] = s.split("-"); return `${+m}/${+d}`; };
 // 期限(「2031-03」の形)を「2031年3月」の表示にする
 const fmtYM = s => { const [y, m] = s.split("-"); return `${y}年${+m}月`; };
@@ -367,6 +369,21 @@ async function buildWorkbook(list, fields) {
   ds.pageSetup = { paperSize: 9, orientation: fields.length > 7 ? "landscape" : "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:1",
     margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.25, footer: 0.25 } };
   ds.headerFooter = { oddFooter: "&C&10&P / &N ページ" };
+  /* --- 3枚目:ボンベ交換の履歴(記録がある場合だけ) --- */
+  const ex = list.flatMap(c => (c.exchanges || []).map(x => ({ c, x }))).sort((a, b) => b.x.date.localeCompare(a.x.date) || byAddr(a.c, b.c));
+  if (ex.length) {
+    const xs = wb.addWorksheet("交換履歴", { views: [{ state: "frozen", ySplit: 1 }] });
+    xs.addRow(["交換した日", "名前", "住所", "入り(古い)", "出(新しい)"]);
+    ex.forEach(({ c, x }) => xs.addRow([x.date.replace(/-/g, "/"), c.name || "", c.address || "", x.inNo || "", x.outNo || ""]));
+    xs.getRow(1).font = { bold: true };
+    [12, 16, 26, 16, 16].forEach((w, i) => { xs.getColumn(i + 1).width = w; });
+    xs.eachRow(r => r.eachCell(cell => { cell.border = border; }));
+    xs.getRow(1).eachCell(cell => { cell.fill = headFill; });
+    xs.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 5 } };
+    xs.pageSetup = { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:1",
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.25, footer: 0.25 } };
+    xs.headerFooter = { oddHeader: "&L&10ボンベ交換の履歴", oddFooter: "&C&10&P / &N ページ" };
+  }
   wb.views = [{ activeTab: 0 }];             // 開いたときは「印刷用」のシートを表示
 
   return { buffer: await wb.xlsx.writeBuffer(), layout: best };
@@ -400,7 +417,7 @@ function matches(c, q) {
   if (filter === "done" && c.lastDelivered !== today()) return false;
   if (!q) return true;
   // 名前・住所・メーター・ボンベのどの項目でも探せる
-  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.cylNo, c.capacity, c.cylCount].join(" ").toLowerCase();
+  const hay = [c.name, c.address, c.meterMaker, c.meterModel, c.regMaker, c.regModel, c.regType, c.cylNo, c.capacity, c.cylCount, ...(c.exchanges || []).flatMap(x => [x.inNo, x.outNo])].join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
@@ -437,6 +454,23 @@ function expiryRow(value) {
   return `<dt>期限</dt><dd class="num">${fmtYM(value)}${badge}</dd>`;
 }
 
+// ボンベ交換の履歴(新しい順)。最初は5件まで出し、「すべて表示」で全部出す
+let exchShowAll = false;
+const sortedExch = c => (c.exchanges || []).slice().sort((a, b) => b.date.localeCompare(a.date) || (b.at || "").localeCompare(a.at || ""));
+function exchHTML(c) {
+  const list = sortedExch(c);
+  const shown = exchShowAll ? list : list.slice(0, 5);
+  return `<section class="spec">
+    <div class="exch-head"><h3>ボンベ交換の履歴</h3><button type="button" class="exch-add" data-act="exch-new">＋ 交換を記録</button></div>
+    ${list.length ? `<ul class="exch-list">${shown.map(x => `<li><button type="button" class="exch-item" data-act="exch-edit" data-eid="${esc(x.id)}" aria-label="${fmtDay(x.date)} の記録を直す">
+        <span class="exch-date">${fmtDay(x.date)}</span>
+        <span class="exch-nos"><span><i class="k in">入り</i><b>${x.inNo ? esc(x.inNo) : "—"}</b></span><span><i class="k out">出</i><b>${x.outNo ? esc(x.outNo) : "—"}</b></span></span>
+      </button></li>`).join("")}</ul>
+      ${list.length > 5 && !exchShowAll ? `<button type="button" class="exch-more" data-act="exch-all">すべて表示(${list.length}件)</button>` : ""}`
+      : `<p class="exch-empty">まだ記録がありません。交換したら「＋ 交換を記録」から入り・出の番号を残せます。</p>`}
+  </section>`;
+}
+
 // 詳細画面の中身を組み立てる
 function detailHTML(c) {
   const done = c.lastDelivered === today();
@@ -464,6 +498,7 @@ function detailHTML(c) {
       <section class="spec"><h3>ボンベ</h3><dl>
         ${specRow("番号", c.cylNo, true)}${specRow("容量", c.capacity, true)}${specRow("本数", c.cylCount, true)}
       </dl></section>
+      ${exchHTML(c)}
       <div class="meta">
         <span>前回配達 <b>${fmtDate(c.lastDelivered)}</b>${ago != null && ago > 0 ? `(${ago}日前)` : ""}</span>
         <span class="absent">不在 <b>${c.absent || 0}</b>回</span>
@@ -479,6 +514,7 @@ function detailHTML(c) {
 // 詳細画面を開く・閉じる
 function openDetail(id) {
   detailId = id;
+  exchShowAll = false;
   renderDetail();
   $("#detail").hidden = false;
   $("#detail").scrollTop = 0;
@@ -551,6 +587,11 @@ $("#list").addEventListener("click", e => {
 $("#detail").addEventListener("click", async e => {
   const btn = e.target.closest("button[data-act]"); if (!btn) return;
   if (btn.dataset.act === "back") return closeDetail();
+  if (btn.dataset.act === "exch-all") { exchShowAll = true; return renderDetail(); }
+  if (btn.dataset.act === "exch-new" || btn.dataset.act === "exch-edit") {
+    const cc = customers.find(x => x.id === detailId); if (!cc) return;
+    return openExch(cc, btn.dataset.eid ? (cc.exchanges || []).find(x => x.id === btn.dataset.eid) : null);
+  }
   if (btn.dataset.act === "photo") { $("#viewer-img").src = btn.querySelector("img").src; $("#viewer").hidden = false; return; }
   const c = customers.find(x => x.id === detailId); if (!c) return;
   const before = { ...c };
@@ -571,8 +612,8 @@ $("#viewer").addEventListener("click", () => { $("#viewer").hidden = true; });
 window.addEventListener("popstate", () => {
   if (!$("#viewer").hidden) { $("#viewer").hidden = true; if (detailId) { try { history.pushState({ detail: detailId }, ""); } catch (e) {} } return; }
   // 入力画面やバックアップ画面が開いていたら、それだけを閉じる
-  if (!$("#sheet").hidden || !$("#backup").hidden || !$("#xls").hidden) {
-    closeSheet(); closeBackup(); closeXls();
+  if (!$("#sheet").hidden || !$("#backup").hidden || !$("#xls").hidden || !$("#exch").hidden) {
+    closeSheet(); closeBackup(); closeXls(); closeExch();
     if (detailId) { try { history.pushState({ detail: detailId }, ""); } catch (e) {} }
     return;
   }
@@ -648,6 +689,70 @@ function openSheet(c) {
 }
 function closeSheet() { $("#scrim").hidden = true; $("#sheet").hidden = true; editingId = null; }
 
+/* ===== 6. ボンベ交換の記録 ===== */
+let exchCustId = null, exchEditId = null, exchDelArmed = false;
+// 交換の記録画面を開く(entry があれば、その記録を直す)
+function openExch(c, entry) {
+  exchCustId = c.id; exchEditId = entry ? entry.id : null; exchDelArmed = false;
+  $("#exch-title").textContent = entry ? "交換の記録を直す" : "ボンベ交換を記録";
+  $("#e-who").textContent = `${c.name}さん${c.address ? " ・ " + c.address : ""}`;
+  $("#e-date").value = entry ? entry.date : today();
+  // 新しく記録するときは、今付いているボンベの番号を「入り」に入れておく
+  $("#e-in").value = entry ? (entry.inNo || "") : (c.cylNo || "");
+  $("#e-out").value = entry ? (entry.outNo || "") : "";
+  $("#e-note").hidden = !!entry;
+  $("#e-save").textContent = entry ? "保存する" : "記録する";
+  $("#e-delwrap").hidden = !entry; $("#e-del").textContent = "この記録を削除";
+  $("#e-err").hidden = true;
+  $("#scrim").hidden = false; $("#exch").hidden = false;
+  setTimeout(() => (entry ? $("#e-in") : $("#e-out")).focus(), 50);
+}
+function closeExch() { $("#exch").hidden = true; exchCustId = exchEditId = null; if ($("#sheet").hidden && $("#backup").hidden && $("#xls").hidden) $("#scrim").hidden = true; }
+$("#e-cancel").addEventListener("click", closeExch);
+
+// 「記録する」「保存する」を押したとき
+$("#exch-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const c = customers.find(x => x.id === exchCustId); if (!c) return closeExch();
+  const date = $("#e-date").value, inNo = $("#e-in").value.trim(), outNo = $("#e-out").value.trim();
+  const err = m => { $("#e-err").textContent = m; $("#e-err").hidden = false; };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return err("交換した日を入れてください。");
+  if (!inNo && !outNo) return err("入りか出の番号を、少なくとも1つ入れてください。");
+  const before = { ...c, exchanges: (c.exchanges || []).slice() };
+  const list = (c.exchanges || []).slice();
+  let next, rec, oldOut = null;
+  if (exchEditId) {
+    // 記録を直すときは、その記録だけを書き換える
+    const i = list.findIndex(x => x.id === exchEditId);
+    if (i >= 0) { oldOut = list[i].outNo; rec = list[i] = { ...list[i], date, inNo, outNo }; }
+    next = { ...c, exchanges: list };
+  } else {
+    rec = { id: "x" + newId(), date, inNo, outNo, at: new Date().toISOString() };
+    list.push(rec);
+    next = { ...c, exchanges: list };
+    // 前回配達日をこの日にする(より新しい日のときだけ)
+    if (!c.lastDelivered || date >= c.lastDelivered) next.lastDelivered = date;
+  }
+  // 一番新しい交換の記録なら、今付いているボンベの番号を「出」の番号にする
+  // (過去の分をあとから記録したときや、手で直した番号は変えない)
+  const newest = sortedExch(next)[0];
+  if (rec && outNo && newest && newest.id === rec.id && (!exchEditId || c.cylNo === oldOut || !c.cylNo)) next.cylNo = outNo;
+  await writeDoc(next);
+  const wasEdit = !!exchEditId;
+  closeExch();
+  toast(wasEdit ? "交換の記録を直しました" : `${c.name}さん 交換を記録(${fmtDay(date)})`, () => writeDoc(before));
+});
+
+// 記録の削除(押し間違い防止のため2回押しで削除)
+$("#e-del").addEventListener("click", async () => {
+  if (!exchDelArmed) { exchDelArmed = true; $("#e-del").textContent = "もう一度押すと削除します"; return; }
+  const c = customers.find(x => x.id === exchCustId); if (!c) return closeExch();
+  const before = { ...c, exchanges: (c.exchanges || []).slice() };
+  await writeDoc({ ...c, exchanges: (c.exchanges || []).filter(x => x.id !== exchEditId) });
+  closeExch();
+  toast("交換の記録を削除しました", () => writeDoc(before));
+});
+
 // Excel 書き出し画面のボタン
 $("#xls-open").addEventListener("click", openXls);
 $("#x-close").addEventListener("click", closeXls);
@@ -668,13 +773,14 @@ $("#b-export").addEventListener("click", exportBackup);
 $("#b-import").addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ""; });
 $("#add").addEventListener("click", () => openSheet(null));
 $("#f-cancel").addEventListener("click", closeSheet);
-$("#scrim").addEventListener("click", () => { closeSheet(); closeBackup(); closeXls(); });
+$("#scrim").addEventListener("click", () => { closeSheet(); closeBackup(); closeXls(); closeExch(); });
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!$("#viewer").hidden) { $("#viewer").hidden = true; return; }
   if (!$("#sheet").hidden) return closeSheet();
   if (!$("#backup").hidden) return closeBackup();
   if (!$("#xls").hidden) return closeXls();
+  if (!$("#exch").hidden) return closeExch();
   closeDetail();
 });
 
